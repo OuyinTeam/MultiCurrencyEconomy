@@ -17,14 +17,16 @@ taboolib {
         }
         dependencies {
             name("CoreLib").optional(false)
+            name("Vault").optional(true)
             name("PlaceholderAPI").optional(true)
-
         }
     }
     env {
         install(Basic)
         install(Bukkit)
         install(BukkitUtil)
+        install(BukkitUI)
+        install(BukkitHook)
         install(Kether)
         install(I18n)
     }
@@ -36,6 +38,7 @@ repositories {
     mavenLocal()
     maven("https://maven.wcpe.top/repository/maven-public/")
     maven("https://repo.extendedclip.com/content/repositories/placeholderapi/")
+    maven("https://jitpack.io")
     mavenCentral()
 }
 
@@ -46,6 +49,7 @@ dependencies {
 
     compileOnly("top.wcpe.mc.plugin.corelib:corelib-api:1.0.0-SNAPSHOT")
     compileOnly("me.clip:placeholderapi:2.11.5")
+    compileOnly("com.github.MilkBowl:VaultAPI:1.7")
 
     compileOnly("com.easy-query:sql-core:3.1.82")
     compileOnly("com.easy-query:sql-mysql:3.1.82")

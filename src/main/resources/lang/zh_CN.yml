@@ -1,0 +1,45 @@
+# ================================================================
+# MultiCurrencyEconomy 语言文件 - 简体中文
+# ================================================================
+
+prefix: "&8[&6MCE&8] &7"
+
+# ---- 通用消息 ----
+not-ready: "{prefix}&c经济服务正在初始化，请稍后再试。"
+no-permission: "{prefix}&c你没有权限执行此操作。"
+player-not-found: "{prefix}&c找不到玩家: {0}"
+currency-not-found: "{prefix}&c找不到货币: {0}"
+invalid-amount: "{prefix}&c无效的金额: {0}"
+amount-must-positive: "{prefix}&c金额必须为正数。"
+
+# ---- 余额相关 ----
+balance-info: "{prefix}&e{0} &7的 &e{1} &7余额: &f{2}{3}"
+balance-self: "{prefix}&7你的 &e{0} &7余额: &f{1}{2}"
+insufficient-balance: "{prefix}&c余额不足！当前: {0}，需要: {1}"
+balance-overflow: "{prefix}&c操作将超过余额上限 {0}。"
+
+# ---- 管理操作 ----
+give-success: "{prefix}&a已向 &e{0} &a的 &e{1} &a账户存入 &f{2}&a。"
+take-success: "{prefix}&a已从 &e{0} &a的 &e{1} &a账户扣除 &f{2}&a。"
+set-success: "{prefix}&a已将 &e{0} &a的 &e{1} &a余额设为 &f{2}&a。"
+
+# ---- 货币管理 ----
+currency-created: "{prefix}&a货币 &e{0} &a创建成功。"
+currency-deleted: "{prefix}&a货币 &e{0} &a已逻辑删除。"
+currency-enabled: "{prefix}&a货币 &e{0} &a已启用。"
+currency-disabled: "{prefix}&a货币 &e{0} &a已禁用。"
+currency-set-primary: "{prefix}&a已将 &e{0} &a设为主货币。"
+currency-already-exists: "{prefix}&c货币标识 {0} 已存在。"
+currency-is-deleted: "{prefix}&c货币 {0} 已被删除，无法操作。"
+currency-is-primary: "{prefix}&c无法删除主货币，请先更换主货币。"
+
+# ---- 上限 ----
+limit-set-success: "{prefix}&a已将 &e{0} &a的 &e{1} &a余额上限设为 &f{2}&a。"
+
+# ---- 备份/回滚 ----
+backup-created: "{prefix}&a备份快照 &e{0} &a创建成功。"
+backup-rollback-success: "{prefix}&a回滚到快照 &e{0} &a完成。"
+backup-not-found: "{prefix}&c找不到快照: {0}"
+
+# ---- 系统 ----
+reload-success: "{prefix}&a配置重载完成。"
