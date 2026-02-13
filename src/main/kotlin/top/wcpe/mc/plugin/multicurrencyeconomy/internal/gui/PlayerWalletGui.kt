@@ -64,6 +64,9 @@ object PlayerWalletGui {
         player.openMenu<PageableChest<Pair<org.bukkit.inventory.ItemStack, top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.entity.CurrencyEntity>>>(TITLE) {
             rows(6)
 
+            // 启用虚拟化，防止玩家取出物品
+            virtualize()
+
             // 定义可用槽位（中央 4x7 = 28 格）
             val slots = mutableListOf<Int>()
             for (row in 1..4) {

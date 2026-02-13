@@ -32,6 +32,9 @@ object AdminPanelGui {
         player.openMenu<Chest>(TITLE) {
             rows(3)
 
+            // 启用虚拟化，防止玩家取出物品
+            virtualize()
+
             // 货币管理
             set(11, buildItem(XMaterial.GOLD_BLOCK) {
                 this.name = "§e货币管理"
@@ -99,6 +102,9 @@ object AdminPanelGui {
 
         player.openMenu<Chest>("§6货币列表") {
             rows(Math.min(6, (currencies.size / 7) + 2).coerceAtLeast(3))
+
+            // 启用虚拟化，防止玩家取出物品
+            virtualize()
 
             currencies.forEachIndexed { index, currency ->
                 val slot = 10 + (index / 7) * 9 + (index % 7)
