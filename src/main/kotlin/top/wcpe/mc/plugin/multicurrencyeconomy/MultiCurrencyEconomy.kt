@@ -12,6 +12,7 @@ import top.wcpe.mc.plugin.multicurrencyeconomy.api.ApiDelegate
 import top.wcpe.mc.plugin.multicurrencyeconomy.api.MultiCurrencyEconomyApi
 import top.wcpe.mc.plugin.multicurrencyeconomy.api.model.AccountSnapshot
 import top.wcpe.mc.plugin.multicurrencyeconomy.api.model.CurrencyInfo
+import top.wcpe.mc.plugin.multicurrencyeconomy.api.model.EconomyResult
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.async.AsyncExecutor
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.config.MainConfig
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.DatabaseManager
@@ -91,7 +92,7 @@ object MultiCurrencyEconomy : Plugin() {
         info("[MCE] MultiCurrencyEconomy 正在关闭...")
 
         // 清理 API 委托
-        MultiCurrencyEconomyApi.delegate = null
+        MultiCurrencyEconomyApi.apiDelegate = null
 
         // 关闭异步执行器
         AsyncExecutor.shutdown(MainConfig.shutdownWaitSeconds)
@@ -155,12 +156,43 @@ object MultiCurrencyEconomy : Plugin() {
     /**
      * 注入 API 委托实现。
      * 将内部服务桥接到公开 API 模块。
+     * 新接口以 playerName 为主要标识，add/take/set 返回 EconomyResult。
      */
     private fun injectApiDelegate() {
-        MultiCurrencyEconomyApi.delegate = object : ApiDelegate {
+        MultiCurrencyEconomyApi.apiDelegate = object : ApiDelegate {
 
-            override fun getBalance(playerUuid: String, currencyIdentifier: String): BigDecimal {
-                return AccountService.getBalance(playerUuid, currencyIdentifier)
+            override fun getBalance(playerName: String, currencyIdentifier: String): BigDecimal {
+                return AccountService.getBalance(playerName, currencyIdentifier)
+            }
+
+            override fun add(
+                playerName: String, currencyIdentifier: String,
+                amount: BigDecimal, reason: String, operator: String
+            ): EconomyResult {
+                val target = Bukkit.getOfflinePlayer(playerName)
+                val uuid = target.uniqueId.toString()
+                val name = target.name ?: playerName
+                return AccountService.deposit(name, uuid, currencyIdentifier, amount, reason, operator)
+            }
+
+            override fun take(
+                playerName: String, currencyIdentifier: String,
+                amount: BigDecimal, reason: String, operator: String
+            ): EconomyResult {
+                val target = Bukkit.getOfflinePlayer(playerName)
+                val uuid = target.uniqueId.toString()
+                val name = target.name ?: playerName
+                return AccountService.withdraw(name, uuid, currencyIdentifier, amount, reason, operator)
+            }
+
+            override fun set(
+                playerName: String, currencyIdentifier: String,
+                amount: BigDecimal, reason: String, operator: String
+            ): EconomyResult {
+                val target = Bukkit.getOfflinePlayer(playerName)
+                val uuid = target.uniqueId.toString()
+                val name = target.name ?: playerName
+                return AccountService.setBalance(name, uuid, currencyIdentifier, amount, reason, operator)
             }
 
             override fun getActiveCurrencies(): List<CurrencyInfo> {
@@ -171,8 +203,8 @@ object MultiCurrencyEconomy : Plugin() {
                 return CurrencyService.getPrimary()?.let { CurrencyService.toInfo(it) }
             }
 
-            override fun getPlayerAccounts(playerUuid: String): List<AccountSnapshot> {
-                return AccountService.getPlayerAccounts(playerUuid)
+            override fun getPlayerAccounts(playerName: String): List<AccountSnapshot> {
+                return AccountService.getPlayerAccounts(playerName)
             }
         }
     }

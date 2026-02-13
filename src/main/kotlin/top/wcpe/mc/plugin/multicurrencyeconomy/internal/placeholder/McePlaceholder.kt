@@ -56,19 +56,19 @@ class McePlaceholder : PlaceholderExpansion() {
 
         // 需要玩家上下文的占位符
         if (player == null) return null
-        val uuid = player.uniqueId.toString()
+        val playerName = player.name ?: return null
 
         return when {
             // %mce_balance_primary% → 主货币原始余额
             params.equals("balance_primary", true) -> {
                 val primary = CurrencyService.getPrimary() ?: return "0"
-                AccountService.getBalance(uuid, primary.identifier).toPlainString()
+                AccountService.getBalance(playerName, primary.identifier).toPlainString()
             }
 
             // %mce_balance_primary_formatted% → 主货币格式化余额
             params.equals("balance_primary_formatted", true) -> {
                 val primary = CurrencyService.getPrimary() ?: return "0"
-                val balance = AccountService.getBalance(uuid, primary.identifier)
+                val balance = AccountService.getBalance(playerName, primary.identifier)
                 CurrencyPrecisionUtil.formatWithSymbol(balance, primary.precision, primary.symbol)
             }
 
@@ -76,7 +76,7 @@ class McePlaceholder : PlaceholderExpansion() {
             params.startsWith("balance_formatted_", true) -> {
                 val currencyId = params.removePrefix("balance_formatted_")
                 val currency = CurrencyService.getByIdentifier(currencyId) ?: return "0"
-                val balance = AccountService.getBalance(uuid, currency.identifier)
+                val balance = AccountService.getBalance(playerName, currency.identifier)
                 CurrencyPrecisionUtil.formatWithSymbol(balance, currency.precision, currency.symbol)
             }
 
@@ -84,7 +84,7 @@ class McePlaceholder : PlaceholderExpansion() {
             params.startsWith("balance_", true) -> {
                 val currencyId = params.removePrefix("balance_")
                 val currency = CurrencyService.getByIdentifier(currencyId) ?: return "0"
-                AccountService.getBalance(uuid, currency.identifier).toPlainString()
+                AccountService.getBalance(playerName, currency.identifier).toPlainString()
             }
 
             // %mce_currency_primary_name% → 主货币名称

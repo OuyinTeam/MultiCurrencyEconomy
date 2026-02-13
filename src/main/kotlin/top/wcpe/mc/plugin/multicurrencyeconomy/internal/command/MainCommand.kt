@@ -1,4 +1,4 @@
-@file:Suppress("unused")
+﻿@file:Suppress("unused")
 
 package top.wcpe.mc.plugin.multicurrencyeconomy.internal.command
 
@@ -9,7 +9,7 @@ import taboolib.common.platform.command.CommandBody
 import taboolib.common.platform.command.CommandHeader
 import taboolib.common.platform.command.mainCommand
 import taboolib.common.platform.command.subCommand
-import taboolib.common.platform.function.submitAsync
+import taboolib.expansion.createHelper
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.async.AsyncExecutor
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.config.MainConfig
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.DatabaseManager
@@ -26,7 +26,7 @@ import java.math.BigDecimal
  * 主命令处理器 — 注册 /mce 命令及其所有子命令。
  *
  * 【命令结构】
- *   /mce                              → 显示帮助
+ *   /mce                              → 显示帮助（createHelper）
  *   /mce balance [currency]           → 查看余额
  *   /mce give <player> <currency> <amount> [reason]   → 管理员存款
  *   /mce take <player> <currency> <amount> [reason]   → 管理员扣款
@@ -43,12 +43,20 @@ import java.math.BigDecimal
  *   /mce setlimit <player> <currency> <max> → 设置余额上限
  *   /mce reload                       → 重载配置
  *   /mce gui                          → 打开钱包 GUI
+ *   /mce admin                        → 打开管理员面板 GUI
  *
  * 【权限体系】
  *   mce.use           → 使用基础命令
  *   mce.user.balance  → 查看余额
  *   mce.user.gui      → 打开 GUI
  *   mce.admin.*       → 管理员全部权限
+ *
+ * 【优化说明】
+ *   - 使用 TabooLib CommandHelper 的 createHelper() 自动生成帮助信息。
+ *   - 所有 dynamic 参数通过 context.get("paramName") 获取，不使用已弃用的 context.argument(-N)。
+ *   - 所有 suggestion 提供 Tab 补全候选值。
+ *   - 金额参数在执行前进行校验。
+ *   - 所有操作以 playerName 作为主要标识。
  */
 @CommandHeader(
     name = "mce",
@@ -60,23 +68,24 @@ object MainCommand {
 
     // ======================== 主命令 ========================
 
+    /** 主命令 — 无参数时显示帮助 */
     @CommandBody
     val main = mainCommand {
-        execute<CommandSender> { sender, _, _ ->
-            sendHelp(sender)
-        }
+        createHelper()
     }
 
     // ======================== balance ========================
 
+    /** 查看余额 — 玩家专用 */
     @CommandBody(permission = "mce.user.balance")
     val balance = subCommand {
         dynamic("currency", optional = true) {
             suggestion<Player> { _, _ ->
                 CurrencyService.getActiveCurrencyIdentifiers()
             }
-            execute<Player> { sender, _, argument ->
-                showBalance(sender, argument)
+            execute<Player> { sender, context, _ ->
+                val currency = context["currency"]
+                showBalance(sender, currency)
             }
         }
         execute<Player> { sender, _, _ ->
@@ -92,6 +101,7 @@ object MainCommand {
 
     // ======================== give ========================
 
+    /** 管理员存款 */
     @CommandBody(permission = "mce.admin.give")
     val give = subCommand {
         dynamic("player") {
@@ -103,17 +113,19 @@ object MainCommand {
                     CurrencyService.getActiveCurrencyIdentifiers()
                 }
                 dynamic("amount") {
-                    execute<CommandSender> { sender, context, argument ->
-                        val playerName = context.argument(-2)
-                        val currencyId = context.argument(-1)
-                        handleGive(sender, playerName, currencyId, argument, "")
+                    execute<CommandSender> { sender, context, _ ->
+                        val playerName = context["player"]
+                        val currencyId = context["currency"]
+                        val amountStr = context["amount"]
+                        handleGive(sender, playerName, currencyId, amountStr, "")
                     }
                     dynamic("reason", optional = true) {
-                        execute<CommandSender> { sender, context, argument ->
-                            val playerName = context.argument(-3)
-                            val currencyId = context.argument(-2)
-                            val amountStr = context.argument(-1)
-                            handleGive(sender, playerName, currencyId, amountStr, argument)
+                        execute<CommandSender> { sender, context, _ ->
+                            val playerName = context["player"]
+                            val currencyId = context["currency"]
+                            val amountStr = context["amount"]
+                            val reason = context["reason"]
+                            handleGive(sender, playerName, currencyId, amountStr, reason)
                         }
                     }
                 }
@@ -123,6 +135,7 @@ object MainCommand {
 
     // ======================== take ========================
 
+    /** 管理员扣款 */
     @CommandBody(permission = "mce.admin.take")
     val take = subCommand {
         dynamic("player") {
@@ -134,17 +147,19 @@ object MainCommand {
                     CurrencyService.getActiveCurrencyIdentifiers()
                 }
                 dynamic("amount") {
-                    execute<CommandSender> { sender, context, argument ->
-                        val playerName = context.argument(-2)
-                        val currencyId = context.argument(-1)
-                        handleTake(sender, playerName, currencyId, argument, "")
+                    execute<CommandSender> { sender, context, _ ->
+                        val playerName = context["player"]
+                        val currencyId = context["currency"]
+                        val amountStr = context["amount"]
+                        handleTake(sender, playerName, currencyId, amountStr, "")
                     }
                     dynamic("reason", optional = true) {
-                        execute<CommandSender> { sender, context, argument ->
-                            val playerName = context.argument(-3)
-                            val currencyId = context.argument(-2)
-                            val amountStr = context.argument(-1)
-                            handleTake(sender, playerName, currencyId, amountStr, argument)
+                        execute<CommandSender> { sender, context, _ ->
+                            val playerName = context["player"]
+                            val currencyId = context["currency"]
+                            val amountStr = context["amount"]
+                            val reason = context["reason"]
+                            handleTake(sender, playerName, currencyId, amountStr, reason)
                         }
                     }
                 }
@@ -154,6 +169,7 @@ object MainCommand {
 
     // ======================== set ========================
 
+    /** 管理员设置余额 */
     @CommandBody(permission = "mce.admin.set")
     val set = subCommand {
         dynamic("player") {
@@ -165,17 +181,19 @@ object MainCommand {
                     CurrencyService.getActiveCurrencyIdentifiers()
                 }
                 dynamic("amount") {
-                    execute<CommandSender> { sender, context, argument ->
-                        val playerName = context.argument(-2)
-                        val currencyId = context.argument(-1)
-                        handleSet(sender, playerName, currencyId, argument, "")
+                    execute<CommandSender> { sender, context, _ ->
+                        val playerName = context["player"]
+                        val currencyId = context["currency"]
+                        val amountStr = context["amount"]
+                        handleSet(sender, playerName, currencyId, amountStr, "")
                     }
                     dynamic("reason", optional = true) {
-                        execute<CommandSender> { sender, context, argument ->
-                            val playerName = context.argument(-3)
-                            val currencyId = context.argument(-2)
-                            val amountStr = context.argument(-1)
-                            handleSet(sender, playerName, currencyId, amountStr, argument)
+                        execute<CommandSender> { sender, context, _ ->
+                            val playerName = context["player"]
+                            val currencyId = context["currency"]
+                            val amountStr = context["amount"]
+                            val reason = context["reason"]
+                            handleSet(sender, playerName, currencyId, amountStr, reason)
                         }
                     }
                 }
@@ -185,6 +203,7 @@ object MainCommand {
 
     // ======================== currency ========================
 
+    /** 货币管理子命令组 */
     @CommandBody(permission = "mce.admin.currency")
     val currency = subCommand {
 
@@ -193,24 +212,25 @@ object MainCommand {
             dynamic("id") {
                 dynamic("name") {
                     dynamic("precision") {
-                        execute<CommandSender> { sender, context, argument ->
-                            val id = context.argument(-2)
-                            val name = context.argument(-1)
-                            val precision = argument.toIntOrNull() ?: run {
+                        execute<CommandSender> { sender, context, _ ->
+                            val id = context["id"]
+                            val name = context["name"]
+                            val precision = context["precision"].toIntOrNull() ?: run {
                                 sender.sendMessage("§c精度必须为整数。")
                                 return@execute
                             }
                             handleCurrencyCreate(sender, id, name, precision, "")
                         }
                         dynamic("symbol", optional = true) {
-                            execute<CommandSender> { sender, context, argument ->
-                                val id = context.argument(-3)
-                                val name = context.argument(-2)
-                                val precision = context.argument(-1).toIntOrNull() ?: run {
+                            execute<CommandSender> { sender, context, _ ->
+                                val id = context["id"]
+                                val name = context["name"]
+                                val precision = context["precision"].toIntOrNull() ?: run {
                                     sender.sendMessage("§c精度必须为整数。")
                                     return@execute
                                 }
-                                handleCurrencyCreate(sender, id, name, precision, argument)
+                                val symbol = context["symbol"]
+                                handleCurrencyCreate(sender, id, name, precision, symbol)
                             }
                         }
                     }
@@ -224,10 +244,11 @@ object MainCommand {
                 suggestion<CommandSender> { _, _ ->
                     CurrencyService.getActiveCurrencyIdentifiers()
                 }
-                execute<CommandSender> { sender, _, argument ->
+                execute<CommandSender> { sender, context, _ ->
+                    val id = context["id"]
                     AsyncExecutor.runAsync {
-                        if (CurrencyService.deleteCurrency(argument)) {
-                            sender.sendMessage("§a货币 §e$argument §a已逻辑删除。")
+                        if (CurrencyService.deleteCurrency(id)) {
+                            sender.sendMessage("§a货币 §e$id §a已逻辑删除。")
                         } else {
                             sender.sendMessage("§c删除失败（货币不存在或为主货币）。")
                         }
@@ -242,10 +263,11 @@ object MainCommand {
                 suggestion<CommandSender> { _, _ ->
                     CurrencyService.getAllCurrencies().map { it.identifier }
                 }
-                execute<CommandSender> { sender, _, argument ->
+                execute<CommandSender> { sender, context, _ ->
+                    val id = context["id"]
                     AsyncExecutor.runAsync {
-                        if (CurrencyService.enableCurrency(argument)) {
-                            sender.sendMessage("§a货币 §e$argument §a已启用。")
+                        if (CurrencyService.enableCurrency(id)) {
+                            sender.sendMessage("§a货币 §e$id §a已启用。")
                         } else {
                             sender.sendMessage("§c启用失败，找不到货币。")
                         }
@@ -260,10 +282,11 @@ object MainCommand {
                 suggestion<CommandSender> { _, _ ->
                     CurrencyService.getActiveCurrencyIdentifiers()
                 }
-                execute<CommandSender> { sender, _, argument ->
+                execute<CommandSender> { sender, context, _ ->
+                    val id = context["id"]
                     AsyncExecutor.runAsync {
-                        if (CurrencyService.disableCurrency(argument)) {
-                            sender.sendMessage("§a货币 §e$argument §a已禁用。")
+                        if (CurrencyService.disableCurrency(id)) {
+                            sender.sendMessage("§a货币 §e$id §a已禁用。")
                         } else {
                             sender.sendMessage("§c禁用失败，找不到货币。")
                         }
@@ -278,10 +301,11 @@ object MainCommand {
                 suggestion<CommandSender> { _, _ ->
                     CurrencyService.getActiveCurrencyIdentifiers()
                 }
-                execute<CommandSender> { sender, _, argument ->
+                execute<CommandSender> { sender, context, _ ->
+                    val id = context["id"]
                     AsyncExecutor.runAsync {
-                        if (CurrencyService.setPrimary(argument)) {
-                            sender.sendMessage("§a已将 §e$argument §a设为主货币。")
+                        if (CurrencyService.setPrimary(id)) {
+                            sender.sendMessage("§a已将 §e$id §a设为主货币。")
                         } else {
                             sender.sendMessage("§c设置失败，找不到货币。")
                         }
@@ -312,29 +336,32 @@ object MainCommand {
 
     // ======================== log ========================
 
+    /** 查询流水 */
     @CommandBody(permission = "mce.admin.log")
     val log = subCommand {
         dynamic("player") {
             suggestion<CommandSender> { _, _ ->
                 Bukkit.getOnlinePlayers().map { it.name }
             }
-            execute<CommandSender> { sender, _, argument ->
-                handleLog(sender, argument, null, 1)
+            execute<CommandSender> { sender, context, _ ->
+                val playerName = context["player"]
+                handleLog(sender, playerName, null, 1)
             }
             dynamic("currency", optional = true) {
                 suggestion<CommandSender> { _, _ ->
                     CurrencyService.getActiveCurrencyIdentifiers()
                 }
-                execute<CommandSender> { sender, context, argument ->
-                    val playerName = context.argument(-1)
-                    handleLog(sender, playerName, argument, 1)
+                execute<CommandSender> { sender, context, _ ->
+                    val playerName = context["player"]
+                    val currency = context["currency"]
+                    handleLog(sender, playerName, currency, 1)
                 }
                 dynamic("page", optional = true) {
-                    execute<CommandSender> { sender, context, argument ->
-                        val playerName = context.argument(-2)
-                        val currencyId = context.argument(-1)
-                        val page = argument.toLongOrNull() ?: 1
-                        handleLog(sender, playerName, currencyId, page)
+                    execute<CommandSender> { sender, context, _ ->
+                        val playerName = context["player"]
+                        val currency = context["currency"]
+                        val page = context["page"].toLongOrNull() ?: 1
+                        handleLog(sender, playerName, currency, page)
                     }
                 }
             }
@@ -343,6 +370,7 @@ object MainCommand {
 
     // ======================== backup ========================
 
+    /** 创建备份 */
     @CommandBody(permission = "mce.admin.backup")
     val backup = subCommand {
         literal("create") {
@@ -350,8 +378,9 @@ object MainCommand {
                 handleBackupCreate(sender, "")
             }
             dynamic("memo", optional = true) {
-                execute<CommandSender> { sender, _, argument ->
-                    handleBackupCreate(sender, argument)
+                execute<CommandSender> { sender, context, _ ->
+                    val memo = context["memo"]
+                    handleBackupCreate(sender, memo)
                 }
             }
         }
@@ -359,19 +388,22 @@ object MainCommand {
 
     // ======================== rollback ========================
 
+    /** 快照回滚 */
     @CommandBody(permission = "mce.admin.rollback")
     val rollback = subCommand {
         dynamic("snapshotId") {
-            execute<CommandSender> { sender, _, argument ->
-                handleRollback(sender, argument, null)
+            execute<CommandSender> { sender, context, _ ->
+                val snapshotId = context["snapshotId"]
+                handleRollback(sender, snapshotId, null)
             }
             dynamic("player", optional = true) {
                 suggestion<CommandSender> { _, _ ->
                     Bukkit.getOnlinePlayers().map { it.name }
                 }
-                execute<CommandSender> { sender, context, argument ->
-                    val snapshotId = context.argument(-1)
-                    handleRollback(sender, snapshotId, argument)
+                execute<CommandSender> { sender, context, _ ->
+                    val snapshotId = context["snapshotId"]
+                    val playerName = context["player"]
+                    handleRollback(sender, snapshotId, playerName)
                 }
             }
         }
@@ -379,6 +411,7 @@ object MainCommand {
 
     // ======================== setlimit ========================
 
+    /** 设置玩家余额上限 */
     @CommandBody(permission = "mce.admin.setlimit")
     val setlimit = subCommand {
         dynamic("player") {
@@ -390,10 +423,10 @@ object MainCommand {
                     CurrencyService.getActiveCurrencyIdentifiers()
                 }
                 dynamic("max") {
-                    execute<CommandSender> { sender, context, argument ->
-                        val playerName = context.argument(-2)
-                        val currencyId = context.argument(-1)
-                        val max = argument.toLongOrNull() ?: run {
+                    execute<CommandSender> { sender, context, _ ->
+                        val playerName = context["player"]
+                        val currencyId = context["currency"]
+                        val max = context["max"].toLongOrNull() ?: run {
                             sender.sendMessage("§c上限必须为整数（-1 = 不限）。")
                             return@execute
                         }
@@ -406,16 +439,19 @@ object MainCommand {
 
     // ======================== reload ========================
 
+    /** 重载配置 */
     @CommandBody(permission = "mce.admin.reload")
     val reload = subCommand {
         execute<CommandSender> { sender, _, _ ->
             MainConfig.reload()
+            CurrencyService.refreshCache()
             sender.sendMessage("§a配置重载完成。")
         }
     }
 
     // ======================== gui ========================
 
+    /** 打开玩家钱包 GUI */
     @CommandBody(permission = "mce.user.gui")
     val gui = subCommand {
         execute<Player> { sender, _, _ ->
@@ -423,37 +459,39 @@ object MainCommand {
         }
     }
 
-    // ======================== 处理方法 ========================
+    // ======================== admin ========================
 
-    private fun sendHelp(sender: CommandSender) {
-        sender.sendMessage("§6===== MultiCurrencyEconomy 帮助 =====")
-        sender.sendMessage("§e/mce balance [currency] §7- 查看余额")
-        sender.sendMessage("§e/mce gui §7- 打开钱包界面")
-        if (sender.hasPermission("mce.admin.give")) {
-            sender.sendMessage("§e/mce give <player> <currency> <amount> [reason] §7- 给予金额")
-            sender.sendMessage("§e/mce take <player> <currency> <amount> [reason] §7- 扣除金额")
-            sender.sendMessage("§e/mce set <player> <currency> <amount> [reason] §7- 设置余额")
-            sender.sendMessage("§e/mce currency <create|delete|enable|disable|setprimary|list> §7- 货币管理")
-            sender.sendMessage("§e/mce log <player> [currency] [page] §7- 查询流水")
-            sender.sendMessage("§e/mce backup create [memo] §7- 创建备份")
-            sender.sendMessage("§e/mce rollback <snapshotId> [player] §7- 回滚备份")
-            sender.sendMessage("§e/mce setlimit <player> <currency> <max> §7- 设置余额上限")
-            sender.sendMessage("§e/mce reload §7- 重载配置")
+    /** 打开管理员面板 GUI */
+    @CommandBody(permission = "mce.admin.gui")
+    val admin = subCommand {
+        execute<Player> { sender, _, _ ->
+            AdminPanelGui.open(sender)
         }
     }
 
+    // ======================== 处理方法 ========================
+
+    /**
+     * 显示玩家指定货币的余额。
+     *
+     * @param player             玩家
+     * @param currencyIdentifier 货币标识符
+     */
     private fun showBalance(player: Player, currencyIdentifier: String) {
         val currency = CurrencyService.getByIdentifier(currencyIdentifier)
         if (currency == null) {
             player.sendMessage("§c找不到货币: $currencyIdentifier")
             return
         }
-        val balance = AccountService.getBalance(player.uniqueId.toString(), currency.identifier)
+        val balance = AccountService.getBalance(player.name, currency.identifier)
         val formatted = CurrencyPrecisionUtil.formatWithSymbol(balance, currency.precision, currency.symbol)
         player.sendMessage("§7你的 §e${currency.name} §7余额: §f$formatted")
     }
 
-    @Suppress("SameParameterValue")
+    /**
+     * 处理管理员存款命令。
+     * 以 playerName 为主要标识，UUID 作为记录字段。
+     */
     private fun handleGive(sender: CommandSender, playerName: String, currencyId: String, amountStr: String, reason: String) {
         val amount = CurrencyPrecisionUtil.parseAmount(amountStr)
         if (amount == null || !CurrencyPrecisionUtil.isPositive(amount)) {
@@ -463,21 +501,24 @@ object MainCommand {
         val target = Bukkit.getOfflinePlayer(playerName)
         val uuid = target.uniqueId.toString()
         val name = target.name ?: playerName
-        val operatorName = if (sender is Player) sender.uniqueId.toString() else "CONSOLE"
+        val operatorName = if (sender is Player) sender.name else "CONSOLE"
         val reasonStr = reason.ifEmpty { "command:give" }
 
         AsyncExecutor.runAsync {
-            val success = AccountService.deposit(uuid, name, currencyId, amount, reasonStr, operatorName)
-            if (success) {
+            val result = AccountService.deposit(name, uuid, currencyId, amount, reasonStr, operatorName)
+            if (result.success) {
                 val currency = CurrencyService.getByIdentifier(currencyId)
                 val formatted = currency?.let { CurrencyPrecisionUtil.format(amount, it.precision) } ?: amount.toString()
                 sender.sendMessage("§a已向 §e$name §a的 §e$currencyId §a账户存入 §f$formatted§a。")
             } else {
-                sender.sendMessage("§c操作失败（货币不存在、未启用或超出上限）。")
+                sender.sendMessage("§c操作失败: ${result.message}")
             }
         }
     }
 
+    /**
+     * 处理管理员扣款命令。
+     */
     private fun handleTake(sender: CommandSender, playerName: String, currencyId: String, amountStr: String, reason: String) {
         val amount = CurrencyPrecisionUtil.parseAmount(amountStr)
         if (amount == null || !CurrencyPrecisionUtil.isPositive(amount)) {
@@ -487,21 +528,24 @@ object MainCommand {
         val target = Bukkit.getOfflinePlayer(playerName)
         val uuid = target.uniqueId.toString()
         val name = target.name ?: playerName
-        val operatorName = if (sender is Player) sender.uniqueId.toString() else "CONSOLE"
+        val operatorName = if (sender is Player) sender.name else "CONSOLE"
         val reasonStr = reason.ifEmpty { "command:take" }
 
         AsyncExecutor.runAsync {
-            val success = AccountService.withdraw(uuid, name, currencyId, amount, reasonStr, operatorName)
-            if (success) {
+            val result = AccountService.withdraw(name, uuid, currencyId, amount, reasonStr, operatorName)
+            if (result.success) {
                 val currency = CurrencyService.getByIdentifier(currencyId)
                 val formatted = currency?.let { CurrencyPrecisionUtil.format(amount, it.precision) } ?: amount.toString()
                 sender.sendMessage("§a已从 §e$name §a的 §e$currencyId §a账户扣除 §f$formatted§a。")
             } else {
-                sender.sendMessage("§c操作失败（余额不足、货币不存在或未启用）。")
+                sender.sendMessage("§c操作失败: ${result.message}")
             }
         }
     }
 
+    /**
+     * 处理管理员设置余额命令。
+     */
     private fun handleSet(sender: CommandSender, playerName: String, currencyId: String, amountStr: String, reason: String) {
         val amount = CurrencyPrecisionUtil.parseAmount(amountStr)
         if (amount == null || !CurrencyPrecisionUtil.isNonNegative(amount)) {
@@ -511,21 +555,24 @@ object MainCommand {
         val target = Bukkit.getOfflinePlayer(playerName)
         val uuid = target.uniqueId.toString()
         val name = target.name ?: playerName
-        val operatorName = if (sender is Player) sender.uniqueId.toString() else "CONSOLE"
+        val operatorName = if (sender is Player) sender.name else "CONSOLE"
         val reasonStr = reason.ifEmpty { "command:set" }
 
         AsyncExecutor.runAsync {
-            val success = AccountService.setBalance(uuid, name, currencyId, amount, reasonStr, operatorName)
-            if (success) {
+            val result = AccountService.setBalance(name, uuid, currencyId, amount, reasonStr, operatorName)
+            if (result.success) {
                 val currency = CurrencyService.getByIdentifier(currencyId)
                 val formatted = currency?.let { CurrencyPrecisionUtil.format(amount, it.precision) } ?: amount.toString()
                 sender.sendMessage("§a已将 §e$name §a的 §e$currencyId §a余额设为 §f$formatted§a。")
             } else {
-                sender.sendMessage("§c操作失败。")
+                sender.sendMessage("§c操作失败: ${result.message}")
             }
         }
     }
 
+    /**
+     * 处理货币创建命令。
+     */
     private fun handleCurrencyCreate(sender: CommandSender, id: String, name: String, precision: Int, symbol: String) {
         AsyncExecutor.runAsync {
             val entity = CurrencyService.createCurrency(id, name, precision, symbol)
@@ -537,15 +584,16 @@ object MainCommand {
         }
     }
 
+    /**
+     * 处理流水查询命令。
+     * 以 playerName 查询流水记录。
+     */
     private fun handleLog(sender: CommandSender, playerName: String, currencyId: String?, page: Long) {
-        val target = Bukkit.getOfflinePlayer(playerName)
-        val uuid = target.uniqueId.toString()
-
         AsyncExecutor.runAsync {
             val records = if (currencyId != null) {
-                AuditService.queryLogsByPlayerAndCurrency(uuid, currencyId, page)
+                AuditService.queryLogsByPlayerAndCurrency(playerName, currencyId, page)
             } else {
-                AuditService.queryLogs(uuid, page)
+                AuditService.queryLogs(playerName, page)
             }
             if (records.isEmpty()) {
                 sender.sendMessage("§7没有更多流水记录。")
@@ -561,6 +609,9 @@ object MainCommand {
         }
     }
 
+    /**
+     * 处理备份创建命令。
+     */
     private fun handleBackupCreate(sender: CommandSender, memo: String) {
         AsyncExecutor.runAsync {
             val snapshotId = BackupService.createBackup(memo)
@@ -572,11 +623,14 @@ object MainCommand {
         }
     }
 
+    /**
+     * 处理回滚命令。
+     * 以 playerName 作为回滚标识。
+     */
     private fun handleRollback(sender: CommandSender, snapshotId: String, playerName: String?) {
         AsyncExecutor.runAsync {
             val success = if (playerName != null) {
-                val target = Bukkit.getOfflinePlayer(playerName)
-                BackupService.rollbackPlayer(snapshotId, target.uniqueId.toString())
+                BackupService.rollbackPlayer(snapshotId, playerName)
             } else {
                 BackupService.rollback(snapshotId)
             }
@@ -588,14 +642,15 @@ object MainCommand {
         }
     }
 
+    /**
+     * 处理设置余额上限命令。
+     * 以 playerName 设置上限。
+     */
     private fun handleSetLimit(sender: CommandSender, playerName: String, currencyId: String, max: Long) {
-        val target = Bukkit.getOfflinePlayer(playerName)
-        val uuid = target.uniqueId.toString()
-
         AsyncExecutor.runAsync {
-            val success = AccountService.setMaxBalance(uuid, currencyId, max)
+            val success = AccountService.setMaxBalance(playerName, currencyId, max)
             if (success) {
-                sender.sendMessage("§a已将 §e${target.name ?: playerName} §a的 §e$currencyId §a余额上限设为 §f$max§a。")
+                sender.sendMessage("§a已将 §e$playerName §a的 §e$currencyId §a余额上限设为 §f$max§a。")
             } else {
                 sender.sendMessage("§c设置失败（账户或货币不存在）。")
             }

@@ -21,6 +21,9 @@ import java.math.BigDecimal
  *   Vault Economy 接口为同步设计。本实现通过内存缓存（AccountService.balanceCache）
  *   实现无阻塞读取，写操作（deposit/withdraw）先更新缓存后异步刷库。
  *
+ * 【playerName 为主键】
+ *   所有操作以 playerName 作为主要标识，UUID 仅作为记录字段传入。
+ *
  * 【银行功能】
  *   不支持银行功能，所有 bank 相关方法返回 NOT_IMPLEMENTED。
  *
@@ -83,8 +86,8 @@ class VaultEconomyProvider : Economy {
     // ======================== 余额查询 ========================
 
     override fun getBalance(playerName: String): Double {
-        val player = Bukkit.getOfflinePlayer(playerName)
-        return getBalance(player)
+        val identifier = primaryIdentifier ?: return 0.0
+        return AccountService.getBalance(playerName, identifier).toDouble()
     }
 
     override fun getBalance(playerName: String, worldName: String): Double {
@@ -92,8 +95,8 @@ class VaultEconomyProvider : Economy {
     }
 
     override fun getBalance(player: OfflinePlayer): Double {
-        val identifier = primaryIdentifier ?: return 0.0
-        return AccountService.getBalance(player.uniqueId.toString(), identifier).toDouble()
+        val name = player.name ?: return 0.0
+        return getBalance(name)
     }
 
     override fun getBalance(player: OfflinePlayer, worldName: String): Double {
@@ -103,8 +106,8 @@ class VaultEconomyProvider : Economy {
     // ======================== 余额检查 ========================
 
     override fun has(playerName: String, amount: Double): Boolean {
-        val player = Bukkit.getOfflinePlayer(playerName)
-        return has(player, amount)
+        val identifier = primaryIdentifier ?: return false
+        return AccountService.has(playerName, identifier, BigDecimal.valueOf(amount))
     }
 
     override fun has(playerName: String, worldName: String, amount: Double): Boolean {
@@ -112,8 +115,8 @@ class VaultEconomyProvider : Economy {
     }
 
     override fun has(player: OfflinePlayer, amount: Double): Boolean {
-        val identifier = primaryIdentifier ?: return false
-        return AccountService.has(player.uniqueId.toString(), identifier, BigDecimal.valueOf(amount))
+        val name = player.name ?: return false
+        return has(name, amount)
     }
 
     override fun has(player: OfflinePlayer, worldName: String, amount: Double): Boolean {
@@ -123,8 +126,27 @@ class VaultEconomyProvider : Economy {
     // ======================== 取款 ========================
 
     override fun withdrawPlayer(playerName: String, amount: Double): EconomyResponse {
-        val player = Bukkit.getOfflinePlayer(playerName)
-        return withdrawPlayer(player, amount)
+        val identifier = primaryIdentifier
+            ?: return EconomyResponse(amount, 0.0, EconomyResponse.ResponseType.FAILURE, "主货币未配置")
+
+        if (amount < 0) {
+            return EconomyResponse(amount, getBalance(playerName), EconomyResponse.ResponseType.FAILURE, "金额不能为负数")
+        }
+
+        val target = Bukkit.getOfflinePlayer(playerName)
+        val uuid = target.uniqueId.toString()
+        val name = target.name ?: playerName
+        val result = AccountService.withdraw(
+            name, uuid, identifier,
+            BigDecimal.valueOf(amount), "vault:withdraw", "VAULT"
+        )
+
+        val newBalance = AccountService.getBalance(name, identifier).toDouble()
+        return if (result.success) {
+            EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.SUCCESS, "")
+        } else {
+            EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.FAILURE, result.message)
+        }
     }
 
     override fun withdrawPlayer(playerName: String, worldName: String, amount: Double): EconomyResponse {
@@ -132,26 +154,8 @@ class VaultEconomyProvider : Economy {
     }
 
     override fun withdrawPlayer(player: OfflinePlayer, amount: Double): EconomyResponse {
-        val identifier = primaryIdentifier
-            ?: return EconomyResponse(amount, 0.0, EconomyResponse.ResponseType.FAILURE, "主货币未配置")
-
-        if (amount < 0) {
-            return EconomyResponse(amount, getBalance(player), EconomyResponse.ResponseType.FAILURE, "金额不能为负数")
-        }
-
-        val uuid = player.uniqueId.toString()
-        val name = player.name ?: "Unknown"
-        val success = AccountService.withdraw(
-            uuid, name, identifier,
-            BigDecimal.valueOf(amount), "vault:withdraw", "VAULT"
-        )
-
-        val newBalance = AccountService.getBalance(uuid, identifier).toDouble()
-        return if (success) {
-            EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.SUCCESS, "")
-        } else {
-            EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.FAILURE, "取款失败（余额不足或服务未就绪）")
-        }
+        val name = player.name ?: return EconomyResponse(amount, 0.0, EconomyResponse.ResponseType.FAILURE, "玩家名称为空")
+        return withdrawPlayer(name, amount)
     }
 
     override fun withdrawPlayer(player: OfflinePlayer, worldName: String, amount: Double): EconomyResponse {
@@ -161,8 +165,27 @@ class VaultEconomyProvider : Economy {
     // ======================== 存款 ========================
 
     override fun depositPlayer(playerName: String, amount: Double): EconomyResponse {
-        val player = Bukkit.getOfflinePlayer(playerName)
-        return depositPlayer(player, amount)
+        val identifier = primaryIdentifier
+            ?: return EconomyResponse(amount, 0.0, EconomyResponse.ResponseType.FAILURE, "主货币未配置")
+
+        if (amount < 0) {
+            return EconomyResponse(amount, getBalance(playerName), EconomyResponse.ResponseType.FAILURE, "金额不能为负数")
+        }
+
+        val target = Bukkit.getOfflinePlayer(playerName)
+        val uuid = target.uniqueId.toString()
+        val name = target.name ?: playerName
+        val result = AccountService.deposit(
+            name, uuid, identifier,
+            BigDecimal.valueOf(amount), "vault:deposit", "VAULT"
+        )
+
+        val newBalance = AccountService.getBalance(name, identifier).toDouble()
+        return if (result.success) {
+            EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.SUCCESS, "")
+        } else {
+            EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.FAILURE, result.message)
+        }
     }
 
     override fun depositPlayer(playerName: String, worldName: String, amount: Double): EconomyResponse {
@@ -170,26 +193,8 @@ class VaultEconomyProvider : Economy {
     }
 
     override fun depositPlayer(player: OfflinePlayer, amount: Double): EconomyResponse {
-        val identifier = primaryIdentifier
-            ?: return EconomyResponse(amount, 0.0, EconomyResponse.ResponseType.FAILURE, "主货币未配置")
-
-        if (amount < 0) {
-            return EconomyResponse(amount, getBalance(player), EconomyResponse.ResponseType.FAILURE, "金额不能为负数")
-        }
-
-        val uuid = player.uniqueId.toString()
-        val name = player.name ?: "Unknown"
-        val success = AccountService.deposit(
-            uuid, name, identifier,
-            BigDecimal.valueOf(amount), "vault:deposit", "VAULT"
-        )
-
-        val newBalance = AccountService.getBalance(uuid, identifier).toDouble()
-        return if (success) {
-            EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.SUCCESS, "")
-        } else {
-            EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.FAILURE, "存款失败（服务未就绪或超出上限）")
-        }
+        val name = player.name ?: return EconomyResponse(amount, 0.0, EconomyResponse.ResponseType.FAILURE, "玩家名称为空")
+        return depositPlayer(name, amount)
     }
 
     override fun depositPlayer(player: OfflinePlayer, worldName: String, amount: Double): EconomyResponse {

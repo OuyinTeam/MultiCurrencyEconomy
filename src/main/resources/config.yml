@@ -20,6 +20,8 @@ default-currency:
   precision: 2
   # 默认余额上限（-1 = 不限；正数为上限）
   default-max-balance: -1
+  # 是否在控制台输出该货币的余额变更日志（true = 输出，false = 静默）
+  console-log: true
 
 # ----- 金额舍入策略 -----
 # DOWN = 向下截断（推荐，不会凭空增钱）

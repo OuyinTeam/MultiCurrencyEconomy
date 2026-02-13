@@ -13,6 +13,8 @@ import java.time.LocalDateTime
  *
  * 【表职责】存储备份快照中每个玩家在每种货币下的余额快照。
  *           一次备份操作会产生多条记录（每个账户一条），通过 [snapshotId] 关联。
+ * 【主键策略】使用 BIGINT 自增主键（generatedKey = true），适应高增长场景。
+ * 【查询键】以 playerName 作为主要查询维度。
  * 【用途】管理员通过 /mce backup create 创建全量快照，/mce rollback 从快照恢复余额。
  * 【命名策略】列名映射依赖 easy-query 命名策略，建议配置为下划线风格（UNDERLINED）。
  * 【KSP 代理】BackupSnapshotEntityProxy 由 sql-ksp-processor 在构建时自动生成。
@@ -21,9 +23,9 @@ import java.time.LocalDateTime
 @EntityProxy
 class BackupSnapshotEntity : ProxyEntityAvailable<BackupSnapshotEntity, BackupSnapshotEntityProxy> {
 
-    /** 行唯一 ID（UUID 字符串） */
-    @Column(primaryKey = true, comment = "行唯一ID", dbType = "varchar(36)")
-    var id: String = ""
+    /** 行自增主键（BIGINT 适应高增长） */
+    @Column(primaryKey = true, generatedKey = true, comment = "行自增主键", dbType = "BIGINT")
+    var id: Long = 0
 
     /**
      * 快照批次 ID — 同一次备份操作的所有记录共享此 ID。
@@ -32,17 +34,17 @@ class BackupSnapshotEntity : ProxyEntityAvailable<BackupSnapshotEntity, BackupSn
     @Column(comment = "快照批次ID", dbType = "varchar(36)")
     var snapshotId: String = ""
 
-    /** 玩家 UUID */
+    /** 玩家 UUID（记录字段） */
     @Column(comment = "玩家UUID", dbType = "varchar(36)")
     var playerUuid: String = ""
 
-    /** 玩家名称（冗余字段） */
+    /** 玩家名称 — 主要查询键 */
     @Column(comment = "玩家名称", dbType = "varchar(64)")
     var playerName: String = ""
 
     /** 货币 ID */
-    @Column(comment = "货币ID", dbType = "varchar(36)")
-    var currencyId: String = ""
+    @Column(comment = "货币ID", dbType = "INT")
+    var currencyId: Int = 0
 
     /** 快照时的余额 */
     @Column(comment = "快照余额", dbType = "DECIMAL(20,8)")

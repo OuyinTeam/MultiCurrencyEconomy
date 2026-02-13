@@ -12,8 +12,10 @@ import java.time.LocalDateTime
  * 交易流水实体 — 映射 mce_transaction_log 表。
  *
  * 【表职责】记录每一笔余额变更的完整审计信息，仅追加（INSERT-only），不可修改或删除。
+ * 【主键策略】使用 BIGINT 自增主键（generatedKey = true），适应高增长流水场景。
+ * 【查询键】以 playerName 作为主要查询维度，不再以 playerUuid 查询。
  * 【审计要素】包含变更前后余额、操作类型、变更原因、操作者、时间等，满足事后审计需求。
- * 【性能考虑】高写入频率表，建议在 (playerUuid, currencyId) 和 (occurredAt) 上建立索引。
+ * 【性能考虑】高写入频率表，建议在 (playerName, currencyId) 和 (occurredAt) 上建立索引。
  * 【命名策略】列名映射依赖 easy-query 命名策略，建议配置为下划线风格（UNDERLINED）。
  * 【KSP 代理】TransactionLogEntityProxy 由 sql-ksp-processor 在构建时自动生成。
  */
@@ -21,21 +23,21 @@ import java.time.LocalDateTime
 @EntityProxy
 class TransactionLogEntity : ProxyEntityAvailable<TransactionLogEntity, TransactionLogEntityProxy> {
 
-    /** 流水唯一 ID（UUID 字符串） */
-    @Column(primaryKey = true, comment = "流水唯一ID", dbType = "varchar(36)")
-    var id: String = ""
+    /** 流水自增主键（BIGINT 适应高增长） */
+    @Column(primaryKey = true, generatedKey = true, comment = "流水自增主键", dbType = "BIGINT")
+    var id: Long = 0
 
-    /** 玩家 UUID */
+    /** 玩家 UUID（记录字段，不作为主要查询键） */
     @Column(comment = "玩家UUID", dbType = "varchar(36)")
     var playerUuid: String = ""
 
-    /** 玩家名称（冗余字段，方便查询与展示） */
+    /** 玩家名称 — 主要查询键 */
     @Column(comment = "玩家名称", dbType = "varchar(64)")
     var playerName: String = ""
 
     /** 关联的货币 ID */
-    @Column(comment = "货币ID", dbType = "varchar(36)")
-    var currencyId: String = ""
+    @Column(comment = "货币ID", dbType = "INT")
+    var currencyId: Int = 0
 
     /**
      * 操作类型。
@@ -63,7 +65,7 @@ class TransactionLogEntity : ProxyEntityAvailable<TransactionLogEntity, Transact
     @Column(comment = "变更原因", dbType = "varchar(512)")
     var reason: String = ""
 
-    /** 操作者（执行者 UUID 字符串，或 "SYSTEM" / "CONSOLE"） */
+    /** 操作者（操作者标识，如玩家名、"SYSTEM" 或 "CONSOLE"） */
     @Column(comment = "操作者", dbType = "varchar(64)")
     var operator: String = ""
 

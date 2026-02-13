@@ -8,7 +8,6 @@ import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.DatabaseManager
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.entity.CurrencyEntity
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.repository.CurrencyRepository
 import java.time.LocalDateTime
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -24,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * 【默认货币】
  *   首次启动时，如果数据库中无货币记录，根据 config.yml 配置自动创建默认主货币。
+ *
+ * 【ID 类型】货币 ID 为 INT 自增主键。
  */
 object CurrencyService {
 
@@ -35,8 +36,9 @@ object CurrencyService {
 
     /**
      * 货币 ID → 实体的映射缓存。
+     * key 为 Int 类型自增 ID。
      */
-    private val currencyIdCache = ConcurrentHashMap<String, CurrencyEntity>()
+    private val currencyIdCache = ConcurrentHashMap<Int, CurrencyEntity>()
 
     // ======================== 初始化 ========================
 
@@ -56,6 +58,9 @@ object CurrencyService {
     /**
      * 根据标识符获取货币信息（不含已删除）。
      * 优先从缓存读取。
+     *
+     * @param identifier 货币标识符（英文小写）
+     * @return 货币实体，不存在返回 null
      */
     fun getByIdentifier(identifier: String): CurrencyEntity? {
         return currencyCache[identifier.lowercase()]
@@ -63,13 +68,18 @@ object CurrencyService {
 
     /**
      * 根据货币 ID 获取货币信息（不含已删除）。
+     *
+     * @param id 货币 INT 自增 ID
+     * @return 货币实体，不存在返回 null
      */
-    fun getById(id: String): CurrencyEntity? {
+    fun getById(id: Int): CurrencyEntity? {
         return currencyIdCache[id]
     }
 
     /**
      * 获取主货币。
+     *
+     * @return 主货币实体，不存在返回 null
      */
     fun getPrimary(): CurrencyEntity? {
         return currencyCache.values.find { it.primary }
@@ -77,6 +87,8 @@ object CurrencyService {
 
     /**
      * 获取所有已启用且未删除的货币列表。
+     *
+     * @return 启用的货币实体列表
      */
     fun getActiveCurrencies(): List<CurrencyEntity> {
         return currencyCache.values.filter { it.enabled }.toList()
@@ -84,6 +96,8 @@ object CurrencyService {
 
     /**
      * 获取所有未删除的货币列表（含禁用的）。
+     *
+     * @return 所有未删除的货币实体列表
      */
     fun getAllCurrencies(): List<CurrencyEntity> {
         return currencyCache.values.toList()
@@ -91,6 +105,8 @@ object CurrencyService {
 
     /**
      * 获取所有已启用货币的标识符列表（用于 Tab 补全）。
+     *
+     * @return 启用的货币标识符列表
      */
     fun getActiveCurrencyIdentifiers(): List<String> {
         return currencyCache.values.filter { it.enabled }.map { it.identifier }
@@ -98,6 +114,9 @@ object CurrencyService {
 
     /**
      * 将实体转换为 API 层的 CurrencyInfo DTO。
+     *
+     * @param entity 货币实体
+     * @return CurrencyInfo DTO
      */
     fun toInfo(entity: CurrencyEntity): CurrencyInfo {
         return CurrencyInfo(
@@ -116,7 +135,14 @@ object CurrencyService {
 
     /**
      * 创建新货币。
+     * 使用自增主键，无需手动生成 UUID。
      *
+     * @param identifier      货币标识符（英文小写）
+     * @param name            显示名称
+     * @param precision       精度（小数位数，0-8）
+     * @param symbol          货币符号
+     * @param defaultMaxBalance 默认余额上限（-1 = 不限）
+     * @param consoleLog      是否在控制台输出该货币的余额变更日志
      * @return 创建结果：成功返回新货币实体，失败返回 null（标识符已存在）
      */
     fun createCurrency(
@@ -124,7 +150,8 @@ object CurrencyService {
         name: String,
         precision: Int,
         symbol: String = "",
-        defaultMaxBalance: Long = -1L
+        defaultMaxBalance: Long = -1L,
+        consoleLog: Boolean = true
     ): CurrencyEntity? {
         val id = identifier.lowercase()
 
@@ -135,7 +162,6 @@ object CurrencyService {
         }
 
         val entity = CurrencyEntity().apply {
-            this.id = UUID.randomUUID().toString()
             this.identifier = id
             this.name = name
             this.symbol = symbol
@@ -144,6 +170,7 @@ object CurrencyService {
             this.primary = false
             this.enabled = true
             this.deleted = false
+            this.consoleLog = consoleLog
             this.createdAt = LocalDateTime.now()
             this.updatedAt = LocalDateTime.now()
         }
@@ -158,6 +185,7 @@ object CurrencyService {
      * 逻辑删除货币。
      * 主货币不允许删除，需先切换主货币。
      *
+     * @param identifier 货币标识符
      * @return true = 删除成功
      */
     fun deleteCurrency(identifier: String): Boolean {
@@ -178,6 +206,9 @@ object CurrencyService {
 
     /**
      * 启用货币。
+     *
+     * @param identifier 货币标识符
+     * @return true = 启用成功
      */
     fun enableCurrency(identifier: String): Boolean {
         val entity = getByIdentifier(identifier) ?: return false
@@ -190,6 +221,9 @@ object CurrencyService {
 
     /**
      * 禁用货币。
+     *
+     * @param identifier 货币标识符
+     * @return true = 禁用成功
      */
     fun disableCurrency(identifier: String): Boolean {
         val entity = getByIdentifier(identifier) ?: return false
@@ -203,6 +237,9 @@ object CurrencyService {
     /**
      * 设置主货币。
      * 先清除所有主货币标记，再将指定货币设为主货币。
+     *
+     * @param identifier 货币标识符
+     * @return true = 设置成功
      */
     fun setPrimary(identifier: String): Boolean {
         val entity = getByIdentifier(identifier) ?: return false
@@ -238,7 +275,6 @@ object CurrencyService {
         if (currencyCache.isNotEmpty()) return
         info("[MCE] 数据库中无货币记录，正在创建默认主货币...")
         val entity = CurrencyEntity().apply {
-            this.id = UUID.randomUUID().toString()
             this.identifier = MainConfig.defaultCurrencyIdentifier
             this.name = MainConfig.defaultCurrencyName
             this.symbol = MainConfig.defaultCurrencySymbol
@@ -247,6 +283,7 @@ object CurrencyService {
             this.primary = true
             this.enabled = true
             this.deleted = false
+            this.consoleLog = MainConfig.defaultCurrencyConsoleLog
             this.createdAt = LocalDateTime.now()
             this.updatedAt = LocalDateTime.now()
         }

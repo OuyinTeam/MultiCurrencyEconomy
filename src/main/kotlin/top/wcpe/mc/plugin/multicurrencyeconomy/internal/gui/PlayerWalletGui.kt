@@ -37,11 +37,11 @@ object PlayerWalletGui {
      */
     fun open(player: Player) {
         val currencies = CurrencyService.getActiveCurrencies()
-        val uuid = player.uniqueId.toString()
+        val playerName = player.name
 
         // 构建每种货币的展示数据
         val items = currencies.map { currency ->
-            val balance = AccountService.getBalanceByCurrencyId(uuid, currency.id)
+            val balance = AccountService.getBalanceByCurrencyId(playerName, currency.id)
             val formatted = CurrencyPrecisionUtil.formatWithSymbol(balance, currency.precision, currency.symbol)
 
             buildItem(XMaterial.GOLD_INGOT) {

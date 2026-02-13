@@ -10,34 +10,46 @@ import java.time.LocalDateTime
  *
  * 【职责】提供账户的 CRUD、余额查询 / 更新方法。
  * 【线程约束】所有方法必须在异步线程中调用。
- * 【唯一约束】(playerUuid, currencyId) 应为逻辑唯一键。
+ * 【唯一约束】(playerName, currencyId) 为逻辑唯一键，所有查询以 playerName 为主。
+ * 【主键】INT 自增主键，playerUuid 仅作为记录字段。
  */
 object AccountRepository {
 
+    /** 获取 easy-query 实体查询客户端 */
     private val eq get() = DatabaseManager.entityQuery
 
     /**
-     * 根据玩家 UUID 和货币 ID 查询账户。
+     * 根据玩家名称和货币 ID 查询账户。
+     *
+     * @param playerName 玩家名称
+     * @param currencyId 货币 ID
+     * @return 账户实体，不存在返回 null
      */
-    fun findByPlayerAndCurrency(playerUuid: String, currencyId: String): AccountEntity? {
+    fun findByPlayerAndCurrency(playerName: String, currencyId: Int): AccountEntity? {
         return eq.queryable(AccountEntity::class.java)
-            .where { it.playerUuid().eq(playerUuid); it.currencyId().eq(currencyId) }
+            .where { it.playerName().eq(playerName); it.currencyId().eq(currencyId) }
             .firstOrNull()
     }
 
     /**
-     * 查询指定玩家的所有账户。
+     * 查询指定玩家名称的所有账户。
+     *
+     * @param playerName 玩家名称
+     * @return 该玩家的所有账户列表
      */
-    fun findByPlayer(playerUuid: String): List<AccountEntity> {
+    fun findByPlayer(playerName: String): List<AccountEntity> {
         return eq.queryable(AccountEntity::class.java)
-            .where { it.playerUuid().eq(playerUuid) }
+            .where { it.playerName().eq(playerName) }
             .toList()
     }
 
     /**
      * 查询指定货币的所有账户。
+     *
+     * @param currencyId 货币 ID
+     * @return 该货币下的所有账户列表
      */
-    fun findByCurrency(currencyId: String): List<AccountEntity> {
+    fun findByCurrency(currencyId: Int): List<AccountEntity> {
         return eq.queryable(AccountEntity::class.java)
             .where { it.currencyId().eq(currencyId) }
             .toList()
@@ -45,6 +57,8 @@ object AccountRepository {
 
     /**
      * 查询所有账户（用于全量备份）。
+     *
+     * @return 所有账户列表
      */
     fun findAll(): List<AccountEntity> {
         return eq.queryable(AccountEntity::class.java)
@@ -54,26 +68,26 @@ object AccountRepository {
     /**
      * 获取或创建账户。
      * 如果账户不存在，自动创建一个余额为 0 的新账户。
+     * 以 playerName + currencyId 作为唯一查询条件。
      *
-     * @param playerUuid  玩家 UUID
-     * @param playerName  玩家名称
+     * @param playerName  玩家名称（主要查询键）
+     * @param playerUuid  玩家 UUID（仅记录用途）
      * @param currencyId  货币 ID
      * @return 已有或新创建的账户实体
      */
-    fun getOrCreate(playerUuid: String, playerName: String, currencyId: String): AccountEntity {
-        val existing = findByPlayerAndCurrency(playerUuid, currencyId)
+    fun getOrCreate(playerName: String, playerUuid: String, currencyId: Int): AccountEntity {
+        val existing = findByPlayerAndCurrency(playerName, currencyId)
         if (existing != null) {
-            // 更新玩家名称（可能改名）
-            if (existing.playerName != playerName) {
-                existing.playerName = playerName
+            // 更新玩家 UUID（可能改名后 UUID 变化的兼容处理）
+            if (existing.playerUuid != playerUuid && playerUuid.isNotEmpty()) {
+                existing.playerUuid = playerUuid
                 existing.updatedAt = LocalDateTime.now()
                 eq.updatable(existing).executeRows()
             }
             return existing
         }
-        // 创建新账户
+        // 创建新账户 — 自增主键由数据库生成
         val newAccount = AccountEntity().apply {
-            this.id = java.util.UUID.randomUUID().toString()
             this.playerUuid = playerUuid
             this.playerName = playerName
             this.currencyId = currencyId
@@ -88,6 +102,10 @@ object AccountRepository {
 
     /**
      * 更新账户信息（含余额）。
+     * 自动更新 updatedAt 字段。
+     *
+     * @param entity 账户实体
+     * @return 影响行数
      */
     fun update(entity: AccountEntity): Long {
         entity.updatedAt = LocalDateTime.now()
@@ -96,6 +114,9 @@ object AccountRepository {
 
     /**
      * 插入账户。
+     *
+     * @param entity 账户实体
+     * @return 影响行数
      */
     fun insert(entity: AccountEntity): Long {
         return eq.insertable(entity).executeRows()
@@ -103,9 +124,14 @@ object AccountRepository {
 
     /**
      * 设置玩家在指定货币下的个人余额上限。
+     *
+     * @param playerName 玩家名称
+     * @param currencyId 货币 ID
+     * @param maxBalance 余额上限（-1 = 使用货币默认值）
+     * @return true = 设置成功
      */
-    fun setMaxBalance(playerUuid: String, currencyId: String, maxBalance: Long): Boolean {
-        val account = findByPlayerAndCurrency(playerUuid, currencyId) ?: return false
+    fun setMaxBalance(playerName: String, currencyId: Int, maxBalance: Long): Boolean {
+        val account = findByPlayerAndCurrency(playerName, currencyId) ?: return false
         account.maxBalance = maxBalance
         account.updatedAt = LocalDateTime.now()
         return eq.updatable(account).executeRows() > 0

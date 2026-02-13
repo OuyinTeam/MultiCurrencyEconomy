@@ -4,13 +4,14 @@ package top.wcpe.mc.plugin.multicurrencyeconomy.api.model
  * 货币信息只读 DTO — 对外暴露货币的基本属性。
  *
  * 【用途】第三方插件通过 API 获取货币元数据，不包含内部管理字段（如软删除标记）。
+ * 【主键】使用 INT 自增 ID。
  * 【线程语义】不可变数据类，线程安全，可在任意线程传递与读取。
  * 【注意事项】precision 字段决定了该货币金额的小数位数，所有金额展示应按此精度格式化。
  */
 data class CurrencyInfo(
 
-    /** 货币唯一 ID（内部 UUID） */
-    val id: String,
+    /** 货币唯一 ID（INT 自增） */
+    val id: Int,
 
     /** 货币标识符（英文小写，如 "coin"、"point"），全局唯一业务键 */
     val identifier: String,

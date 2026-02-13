@@ -47,6 +47,10 @@ object MainConfig {
     val defaultCurrencyMaxBalance: Long
         get() = conf.getLong("default-currency.default-max-balance", -1L)
 
+    /** 默认货币控制台日志开关（是否在控制台输出余额变更日志） */
+    val defaultCurrencyConsoleLog: Boolean
+        get() = conf.getBoolean("default-currency.console-log", true)
+
     // ======================== 舍入策略 ========================
 
     /**

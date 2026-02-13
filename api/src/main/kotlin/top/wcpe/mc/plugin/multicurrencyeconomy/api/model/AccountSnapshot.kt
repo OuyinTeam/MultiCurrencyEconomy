@@ -6,15 +6,16 @@ import java.math.BigDecimal
  * 账户快照只读 DTO — 对外暴露玩家在某一货币下的余额信息。
  *
  * 【用途】第三方插件通过 API 查询玩家资产组合，每种货币一条记录。
+ * 【查询键】以 playerName 为主要标识。
  * 【线程语义】不可变数据类，线程安全。
  */
 data class AccountSnapshot(
 
-    /** 玩家 UUID 字符串 */
-    val playerUuid: String,
-
-    /** 玩家名称（冗余，方便展示） */
+    /** 玩家名称（主要标识） */
     val playerName: String,
+
+    /** 玩家 UUID 字符串（记录字段） */
+    val playerUuid: String,
 
     /** 货币标识符（如 "coin"） */
     val currencyIdentifier: String,

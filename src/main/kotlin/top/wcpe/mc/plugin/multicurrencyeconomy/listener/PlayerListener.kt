@@ -26,15 +26,16 @@ object PlayerListener {
 
     /**
      * 玩家加入事件 — 异步加载余额到缓存。
+     * 以 playerName 为主要标识。
      */
     @SubscribeEvent
     fun onPlayerJoin(event: PlayerJoinEvent) {
         if (!DatabaseManager.ready) return
         val player = event.player
-        val uuid = player.uniqueId.toString()
         val name = player.name
+        val uuid = player.uniqueId.toString()
         submitAsync {
-            AccountService.loadPlayerBalances(uuid, name)
+            AccountService.loadPlayerBalances(name, uuid)
         }
     }
 
@@ -46,6 +47,6 @@ object PlayerListener {
     @SubscribeEvent
     fun onPlayerQuit(event: PlayerQuitEvent) {
         // 可选：清除离线玩家缓存以释放内存
-        // AccountService.unloadPlayer(event.player.uniqueId.toString())
+        // AccountService.unloadPlayer(event.player.name)
     }
 }

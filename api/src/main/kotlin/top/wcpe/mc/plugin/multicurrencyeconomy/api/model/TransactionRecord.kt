@@ -7,19 +7,20 @@ import java.time.LocalDateTime
  * 交易流水只读 DTO — 对外暴露单笔交易的完整审计信息。
  *
  * 【用途】流水查询展示（GUI / 指令 / 第三方 API 调用）。
+ * 【主键】使用 Long 类型（BIGINT 自增）。
  * 【审计价值】包含变更前后余额、操作者、原因等完整上下文，可用于事后审计与争议处理。
  * 【线程语义】不可变数据类，线程安全。
  */
 data class TransactionRecord(
 
-    /** 流水唯一 ID（UUID） */
-    val id: String,
+    /** 流水唯一 ID（BIGINT 自增） */
+    val id: Long,
 
-    /** 玩家 UUID */
-    val playerUuid: String,
-
-    /** 玩家名称 */
+    /** 玩家名称（主要查询标识） */
     val playerName: String,
+
+    /** 玩家 UUID（记录字段） */
+    val playerUuid: String,
 
     /** 货币标识符 */
     val currencyIdentifier: String,
@@ -39,7 +40,7 @@ data class TransactionRecord(
     /** 变更原因 / 来源（如 "vault:EssentialsX" / "command:admin" / "api:MyPlugin"） */
     val reason: String,
 
-    /** 操作者（UUID 或 "SYSTEM" / "CONSOLE"） */
+    /** 操作者标识（如玩家名或 "SYSTEM" / "CONSOLE"） */
     val operator: String,
 
     /** 发生时间 */

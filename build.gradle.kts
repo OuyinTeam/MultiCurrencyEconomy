@@ -29,6 +29,7 @@ taboolib {
         install(BukkitHook)
         install(Kether)
         install(I18n)
+        install(CommandHelper)
     }
     version { taboolib = "6.2.4-fa94b997" }
 }

@@ -2,6 +2,7 @@ plugins {
     java
     kotlin("jvm")
     `maven-publish`
+    id("io.izzel.taboolib") version "2.0.28"
 }
 
 java {
@@ -16,9 +17,12 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
         freeCompilerArgs = listOf("-Xjvm-default=all")
     }
 }
+taboolib { subproject = true }
 
 dependencies {
     compileOnly(kotlin("stdlib"))
+    compileOnly("ink.ptms.core:v12004:12004:mapped")
+    compileOnly("ink.ptms.core:v12004:12004:universal")
 }
 
 repositories {
