@@ -1,4 +1,5 @@
 import io.izzel.taboolib.gradle.*
+import org.gradle.api.tasks.testing.Test
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -61,6 +62,11 @@ dependencies {
     compileOnly(fileTree("libs"))
 
     testImplementation(kotlin("test"))
+    testImplementation("io.mockk:mockk:1.13.10")
+    testImplementation("ink.ptms.core:v12004:12004:mapped")
+    testImplementation("ink.ptms.core:v12004:12004:universal")
+    testImplementation("com.easy-query:sql-core:3.1.82")
+    testImplementation("com.easy-query:sql-api-proxy:3.1.82")
 }
 
 tasks.withType<JavaCompile> {
@@ -72,6 +78,13 @@ tasks.withType<KotlinCompile> {
         jvmTarget = "1.8"
         freeCompilerArgs = listOf("-Xjvm-default=all")
     }
+}
+
+tasks.withType<Test> {
+    useJUnit()
+    // 避免测试期 JVM 动态代理警告污染输出，并统一中文日志编码。
+    jvmArgs("-XX:+EnableDynamicAgentLoading", "-Xshare:off")
+    systemProperty("file.encoding", "UTF-8")
 }
 
 configure<JavaPluginConvention> {
