@@ -24,10 +24,14 @@ import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.entity.Transact
  *   所有服务层方法在 [ready] = false 时返回失败 / 降级结果。
  *   这保证了在数据库初始化完成前，Vault/命令/GUI 不会触发无效 SQL。
  *
+ * 【客户端获取策略】
+ *   [entityQuery] 和 [queryClient] 使用 get() 委托方式，每次访问都从 CoreLib 获取最新实例。
+ *   这保证了 CoreLib 在 reload 时重建客户端对象后，本插件能自动使用新实例，
+ *   避免持有过期引用导致的连接泄漏或查询异常。
+ *
  * 【线程语义】
  *   - [initialize] 必须在异步线程中调用。
  *   - [ready] 使用 @Volatile 保证可见性。
- *   - [entityQuery] 和 [queryClient] 在初始化完成后不可变，线程安全。
  */
 object DatabaseManager {
 
@@ -36,13 +40,19 @@ object DatabaseManager {
     var ready: Boolean = false
         private set
 
-    /** easy-query 实体查询客户端（代理模式） — 初始化后不可变 */
-    lateinit var entityQuery: EasyEntityQuery
-        private set
+    /**
+     * easy-query 实体查询客户端（代理模式）。
+     * 每次访问均从 CoreLib 获取最新实例，避免 reload 后持有过期引用。
+     */
+    val entityQuery: EasyEntityQuery
+        get() = CoreLibApi.easyEntityQuery(MainConfig.datasourceKey)
 
-    /** easy-query 原始查询客户端 — 初始化后不可变 */
-    lateinit var queryClient: EasyQueryClient
-        private set
+    /**
+     * easy-query 原始查询客户端。
+     * 每次访问均从 CoreLib 获取最新实例，避免 reload 后持有过期引用。
+     */
+    val queryClient: EasyQueryClient
+        get() = CoreLibApi.easyQueryClient(MainConfig.datasourceKey)
 
     /**
      * 需要 Code First 同步的实体类列表。
@@ -71,9 +81,9 @@ object DatabaseManager {
         info("[MCE] 正在初始化数据库，数据源: $key")
 
         try {
-            // 从 CoreLib 获取 easy-query 客户端
-            entityQuery = CoreLibApi.easyEntityQuery(key)
-            queryClient = CoreLibApi.easyQueryClient(key)
+            // 验证 CoreLib 数据源可用（触发一次获取，确认不抛异常）
+            CoreLibApi.easyEntityQuery(key)
+            CoreLibApi.easyQueryClient(key)
             info("[MCE] 成功获取 CoreLib 数据源: $key")
 
             // Code First — 同步表结构

@@ -17,9 +17,10 @@ import java.math.BigDecimal
  *   Vault 操作默认针对"主货币"（[CurrencyService.getPrimary]）。
  *   第三方插件如需操作非主货币，请使用 MultiCurrencyEconomy API。
  *
- * 【同步适配】
- *   Vault Economy 接口为同步设计。本实现通过内存缓存（AccountService.balanceCache）
- *   实现无阻塞读取，写操作（deposit/withdraw）先更新缓存后异步刷库。
+ * 【在线 / 离线路由】
+ *   所有余额查询和变更操作会检测目标玩家是否在当前服务器在线：
+ *   - 在线玩家 → 通过内存缓存无阻塞操作（AccountService 缓存路径）
+ *   - 离线玩家 → 通过 Direct 方法直接访问数据库，避免多服缓存冲突
  *
  * 【playerName 为主键】
  *   所有操作以 playerName 作为主要标识，UUID 仅作为记录字段传入。
@@ -28,7 +29,8 @@ import java.math.BigDecimal
  *   不支持银行功能，所有 bank 相关方法返回 NOT_IMPLEMENTED。
  *
  * 【线程语义】
- *   所有方法可在任意线程安全调用（内部通过 ConcurrentHashMap 保证）。
+ *   在线玩家的操作可在任意线程安全调用（ConcurrentHashMap）。
+ *   离线玩家的 Direct 操作涉及数据库 I/O，Vault 同步接口会阻塞当前线程。
  */
 class VaultEconomyProvider : Economy {
 
@@ -87,7 +89,13 @@ class VaultEconomyProvider : Economy {
 
     override fun getBalance(playerName: String): Double {
         val identifier = primaryIdentifier ?: return 0.0
-        return AccountService.getBalance(playerName, identifier).toDouble()
+        return if (Bukkit.getPlayerExact(playerName) != null) {
+            // 在线玩家 → 缓存读取，零 I/O
+            AccountService.getBalance(playerName, identifier).toDouble()
+        } else {
+            // 离线玩家 → 直查数据库，获取最新余额
+            AccountService.getBalanceFromDb(playerName, identifier).toDouble()
+        }
     }
 
     override fun getBalance(playerName: String, worldName: String): Double {
@@ -107,7 +115,12 @@ class VaultEconomyProvider : Economy {
 
     override fun has(playerName: String, amount: Double): Boolean {
         val identifier = primaryIdentifier ?: return false
-        return AccountService.has(playerName, identifier, BigDecimal.valueOf(amount))
+        return if (Bukkit.getPlayerExact(playerName) != null) {
+            AccountService.has(playerName, identifier, BigDecimal.valueOf(amount))
+        } else {
+            // 离线玩家 → 直查 DB
+            AccountService.getBalanceFromDb(playerName, identifier) >= BigDecimal.valueOf(amount)
+        }
     }
 
     override fun has(playerName: String, worldName: String, amount: Double): Boolean {
@@ -136,12 +149,19 @@ class VaultEconomyProvider : Economy {
         val target = Bukkit.getOfflinePlayer(playerName)
         val uuid = target.uniqueId.toString()
         val name = target.name ?: playerName
-        val result = AccountService.withdraw(
-            name, uuid, identifier,
-            BigDecimal.valueOf(amount), "vault:withdraw", "VAULT"
-        )
+        val isOnline = Bukkit.getPlayerExact(name) != null
 
-        val newBalance = AccountService.getBalance(name, identifier).toDouble()
+        val result = if (isOnline) {
+            AccountService.withdraw(name, uuid, identifier, BigDecimal.valueOf(amount), "vault:withdraw", "VAULT")
+        } else {
+            AccountService.withdrawDirect(name, uuid, identifier, BigDecimal.valueOf(amount), "vault:withdraw", "VAULT")
+        }
+
+        val newBalance = if (isOnline) {
+            AccountService.getBalance(name, identifier).toDouble()
+        } else {
+            result.balance.toDouble()
+        }
         return if (result.success) {
             EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.SUCCESS, "")
         } else {
@@ -175,12 +195,19 @@ class VaultEconomyProvider : Economy {
         val target = Bukkit.getOfflinePlayer(playerName)
         val uuid = target.uniqueId.toString()
         val name = target.name ?: playerName
-        val result = AccountService.deposit(
-            name, uuid, identifier,
-            BigDecimal.valueOf(amount), "vault:deposit", "VAULT"
-        )
+        val isOnline = Bukkit.getPlayerExact(name) != null
 
-        val newBalance = AccountService.getBalance(name, identifier).toDouble()
+        val result = if (isOnline) {
+            AccountService.deposit(name, uuid, identifier, BigDecimal.valueOf(amount), "vault:deposit", "VAULT")
+        } else {
+            AccountService.depositDirect(name, uuid, identifier, BigDecimal.valueOf(amount), "vault:deposit", "VAULT")
+        }
+
+        val newBalance = if (isOnline) {
+            AccountService.getBalance(name, identifier).toDouble()
+        } else {
+            result.balance.toDouble()
+        }
         return if (result.success) {
             EconomyResponse(amount, newBalance, EconomyResponse.ResponseType.SUCCESS, "")
         } else {

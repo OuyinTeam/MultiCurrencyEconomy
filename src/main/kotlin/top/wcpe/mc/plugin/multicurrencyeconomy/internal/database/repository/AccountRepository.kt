@@ -12,6 +12,9 @@ import java.time.LocalDateTime
  * 【线程约束】所有方法必须在异步线程中调用。
  * 【唯一约束】(playerName, currencyId) 为逻辑唯一键，所有查询以 playerName 为主。
  * 【主键】INT 自增主键，playerUuid 仅作为记录字段。
+ * 【乐观锁】AccountEntity 包含 @Version 版本号字段，
+ *          [update] 方法自动校验并递增版本号（返回 0 表示冲突），
+ *          [updateForce] 跳过版本检查（用于管理员回滚等强制操作）。
  */
 object AccountRepository {
 
@@ -79,6 +82,7 @@ object AccountRepository {
         val existing = findByPlayerAndCurrency(playerName, currencyId)
         if (existing != null) {
             // 更新玩家 UUID（可能改名后 UUID 变化的兼容处理）
+            // 实体刚从 DB 读取，版本号是最新的，乐观锁校验可正常通过
             if (existing.playerUuid != playerUuid && playerUuid.isNotEmpty()) {
                 existing.playerUuid = playerUuid
                 existing.updatedAt = LocalDateTime.now()
@@ -101,14 +105,34 @@ object AccountRepository {
     }
 
     /**
-     * 更新账户信息（含余额）。
+     * 更新账户信息（含余额）— 带乐观锁版本检查。
+     * EasyQuery 自动在 WHERE 中追加 version 校验，并在 SET 中将 version + 1。
+     * 返回 0 表示版本冲突（数据已被其他事务修改），调用方应重试。
      * 自动更新 updatedAt 字段。
      *
      * @param entity 账户实体
-     * @return 影响行数
+     * @return 影响行数（0 = 版本冲突，1 = 成功）
      */
     fun update(entity: AccountEntity): Long {
         entity.updatedAt = LocalDateTime.now()
+        return eq.updatable(entity).executeRows()
+    }
+
+    /**
+     * 强制更新账户信息 — 先从数据库读取最新版本号再执行更新。
+     * 用于管理员回滚等必须成功的强制操作。
+     * 通过同步最新版本号确保乐观锁校验通过，而非跳过版本检查。
+     * 如果账户在数据库中不存在，返回 0。
+     * 自动更新 updatedAt 字段。
+     *
+     * @param entity 账户实体
+     * @return 影响行数（0 = 账户不存在或版本冲突，1 = 成功）
+     */
+    fun updateForce(entity: AccountEntity): Long {
+        entity.updatedAt = LocalDateTime.now()
+        // 获取数据库中的最新版本号，确保乐观锁校验通过
+        val current = findByPlayerAndCurrency(entity.playerName, entity.currencyId) ?: return 0
+        entity.version = current.version
         return eq.updatable(entity).executeRows()
     }
 
@@ -124,6 +148,7 @@ object AccountRepository {
 
     /**
      * 设置玩家在指定货币下的个人余额上限。
+     * 实体刚从 DB 读取，版本号是最新的，乐观锁校验可正常通过。
      *
      * @param playerName 玩家名称
      * @param currencyId 货币 ID

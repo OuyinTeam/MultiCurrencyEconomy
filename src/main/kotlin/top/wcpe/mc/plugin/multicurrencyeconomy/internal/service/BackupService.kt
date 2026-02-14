@@ -126,6 +126,8 @@ object BackupService {
 
     /**
      * 执行回滚操作 — 将快照中的余额恢复到对应账户。
+     * 使用 [AccountRepository.updateForce] 跳过乐观锁检查，
+     * 因为回滚是管理员强制操作，必须无条件成功覆盖当前余额。
      *
      * @param snapshots 需要回滚的快照列表
      * @return true = 回滚成功
@@ -140,9 +142,9 @@ object BackupService {
                 val oldBalance = account.balance
                 val newBalance = snapshot.balance
 
-                // 更新账户余额
+                // 更新账户余额（强制写入，跳过乐观锁）
                 account.balance = newBalance
-                AccountRepository.update(account)
+                AccountRepository.updateForce(account)
 
                 // 写入回滚审计流水
                 AuditService.writeLog(

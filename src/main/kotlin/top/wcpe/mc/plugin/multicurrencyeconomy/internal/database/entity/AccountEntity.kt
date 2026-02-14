@@ -3,6 +3,8 @@ package top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.entity
 import com.easy.query.core.annotation.Column
 import com.easy.query.core.annotation.EntityProxy
 import com.easy.query.core.annotation.Table
+import com.easy.query.core.annotation.Version
+import com.easy.query.core.basic.extension.version.VersionLongStrategy
 import com.easy.query.core.proxy.ProxyEntityAvailable
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.entity.proxy.AccountEntityProxy
 import java.math.BigDecimal
@@ -16,6 +18,8 @@ import java.time.LocalDateTime
  * 【唯一键】以 playerName + currencyId 作为逻辑唯一约束，内部查询以 playerName 为主。
  * 【余额精度】balance 列使用 DECIMAL(20,8) 存储，应用层在读写时按货币精度进行舍入。
  * 【上限机制】maxBalance 字段可按玩家+货币粒度覆盖货币默认上限（-1 = 使用货币默认值）。
+ * 【乐观锁】version 字段实现乐观锁并发控制，每次更新时 EasyQuery 自动校验并递增版本号，
+ *           防止多服务器 / 多线程同时修改同一账户导致的数据覆盖。
  * 【命名策略】列名映射依赖 easy-query 命名策略，建议配置为下划线风格（UNDERLINED）。
  * 【KSP 代理】AccountEntityProxy 由 sql-ksp-processor 在构建时自动生成。
  */
@@ -60,5 +64,16 @@ class AccountEntity : ProxyEntityAvailable<AccountEntity, AccountEntityProxy> {
     /** 最后更新时间 */
     @Column(comment = "最后更新时间", dbType = "DATETIME")
     var updatedAt: LocalDateTime = LocalDateTime.now()
+
+    /**
+     * 乐观锁版本号。
+     * 每次更新时 EasyQuery 自动在 WHERE 中校验当前版本，并将版本号 +1。
+     * 若 WHERE 未匹配（版本已被其他事务递增），则 executeRows 返回 0，
+     * 由上层业务重试或报错。
+     * 新插入的账户初始版本为 1。
+     */
+    @Version(strategy = VersionLongStrategy::class)
+    @Column(comment = "乐观锁版本号", dbType = "BIGINT NOT NULL DEFAULT 1")
+    var version: Long = 1L
 
 }

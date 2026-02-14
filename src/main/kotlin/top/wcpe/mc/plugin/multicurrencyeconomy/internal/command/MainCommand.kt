@@ -26,7 +26,8 @@ import top.wcpe.mc.plugin.multicurrencyeconomy.internal.util.CurrencyPrecisionUt
  * 【命令结构】
  *   /mce                              → 显示帮助（createHelper）
  *   /mce balance [currency]           → 查看余额
- *   /mce give <player> <currency> <amount> [reason]   → 管理员存款
+ *   /mce lookup <player> [currency]    → 后台查询玩家余额(支持离线)
+ *   /mce give <player> <currency> <amount> [reason]   → 管理员存款(支持离线)
  *   /mce take <player> <currency> <amount> [reason]   → 管理员扣款
  *   /mce set <player> <currency> <amount> [reason]    → 管理员设置余额
  *   /mce currency create <id> <name> <precision> [symbol]  → 创建货币
@@ -56,6 +57,9 @@ import top.wcpe.mc.plugin.multicurrencyeconomy.internal.util.CurrencyPrecisionUt
  *   - 所有 suggestion 提供 Tab 补全候选值。
  *   - 金额参数在执行前进行校验。
  *   - 所有操作以 playerName 作为主要标识。
+ *   - give/take/set 命令支持离线玩家操作：
+ *     在线玩家走缓存路径（零延迟），离线玩家走 Direct 数据库路径（避免多服缓存冲突）。
+ *   - lookup 命令直接从数据库查询，始终返回最新数据。
  */
 @CommandHeader(
     name = "mce",
@@ -98,13 +102,39 @@ object MainCommand {
         }
     }
 
+    // ======================== lookup ========================
+
+    /** 后台查询玩家余额 — 支持离线玩家，直接从数据库读取 */
+    @CommandBody(permission = "mce.admin.lookup")
+    val lookup = subCommand {
+        dynamic(comment = "@command-help-player") {
+            suggestion<CommandSender>(uncheck = true) { _, _ ->
+                Bukkit.getOnlinePlayers().map { it.name }
+            }
+            execute<CommandSender> { sender, context, _ ->
+                val playerName = context["@command-help-player"]
+                handleLookup(sender, playerName, null)
+            }
+            dynamic(optional = true, comment = "@command-help-currency") {
+                suggestion<CommandSender> { _, _ ->
+                    CurrencyService.getActiveCurrencyIdentifiers()
+                }
+                execute<CommandSender> { sender, context, _ ->
+                    val playerName = context["@command-help-player"]
+                    val currencyId = context["@command-help-currency"]
+                    handleLookup(sender, playerName, currencyId)
+                }
+            }
+        }
+    }
+
     // ======================== give ========================
 
     /** 管理员存款 */
     @CommandBody(permission = "mce.admin.give")
     val give = subCommand {
         dynamic(comment = "@command-help-player") {
-            suggestion<CommandSender> { _, _ ->
+            suggestion<CommandSender>(uncheck = true) { _, _ ->
                 Bukkit.getOnlinePlayers().map { it.name }
             }
             dynamic(comment = "@command-help-currency") {
@@ -138,7 +168,7 @@ object MainCommand {
     @CommandBody(permission = "mce.admin.take")
     val take = subCommand {
         dynamic(comment = "@command-help-player") {
-            suggestion<CommandSender> { _, _ ->
+            suggestion<CommandSender>(uncheck = true) { _, _ ->
                 Bukkit.getOnlinePlayers().map { it.name }
             }
             dynamic(comment = "@command-help-currency") {
@@ -172,7 +202,7 @@ object MainCommand {
     @CommandBody(permission = "mce.admin.set")
     val set = subCommand {
         dynamic(comment = "@command-help-player") {
-            suggestion<CommandSender> { _, _ ->
+            suggestion<CommandSender>(uncheck = true) { _, _ ->
                 Bukkit.getOnlinePlayers().map { it.name }
             }
             dynamic(comment = "@command-help-currency") {
@@ -339,7 +369,7 @@ object MainCommand {
     @CommandBody(permission = "mce.admin.log")
     val log = subCommand {
         dynamic(comment = "@command-help-player") {
-            suggestion<CommandSender> { _, _ ->
+            suggestion<CommandSender>(uncheck = true) { _, _ ->
                 Bukkit.getOnlinePlayers().map { it.name }
             }
             execute<CommandSender> { sender, context, _ ->
@@ -396,7 +426,7 @@ object MainCommand {
                 handleRollback(sender, snapshotId, null)
             }
             dynamic(optional = true, comment = "@command-help-player") {
-                suggestion<CommandSender> { _, _ ->
+                suggestion<CommandSender>(uncheck = true) { _, _ ->
                     Bukkit.getOnlinePlayers().map { it.name }
                 }
                 execute<CommandSender> { sender, context, _ ->
@@ -414,7 +444,7 @@ object MainCommand {
     @CommandBody(permission = "mce.admin.setlimit")
     val setlimit = subCommand {
         dynamic(comment = "@command-help-player") {
-            suggestion<CommandSender> { _, _ ->
+            suggestion<CommandSender>(uncheck = true) { _, _ ->
                 Bukkit.getOnlinePlayers().map { it.name }
             }
             dynamic(comment = "@command-help-currency") {
@@ -488,8 +518,45 @@ object MainCommand {
     }
 
     /**
+     * 后台查询玩家余额 — 直接从数据库读取，支持离线玩家。
+     * 指定货币则查单个余额，不指定则显示所有已启用货币的余额。
+     *
+     * @param sender     命令发送者
+     * @param playerName 目标玩家名称（可离线）
+     * @param currencyId 货币标识符（null = 显示全部）
+     */
+    private fun handleLookup(sender: CommandSender, playerName: String, currencyId: String?) {
+        AsyncExecutor.runAsync {
+            if (currencyId != null) {
+                // 查单个货币
+                val currency = CurrencyService.getByIdentifier(currencyId)
+                if (currency == null) {
+                    sender.sendMessage("§c找不到货币: $currencyId")
+                    return@runAsync
+                }
+                val balance = AccountService.getBalanceFromDb(playerName, currencyId)
+                val formatted = CurrencyPrecisionUtil.formatWithSymbol(balance, currency.precision, currency.symbol)
+                val onlineTag = if (Bukkit.getPlayerExact(playerName) != null) "§a[在线]" else "§7[离线]"
+                sender.sendMessage("$onlineTag §e$playerName §7的 §e${currency.name} §7余额: §f$formatted")
+            } else {
+                // 查所有货币
+                val accounts = AccountService.getPlayerAccountsFromDb(playerName)
+                if (accounts.isEmpty()) {
+                    sender.sendMessage("§7该玩家暂无账户数据。")
+                    return@runAsync
+                }
+                val onlineTag = if (Bukkit.getPlayerExact(playerName) != null) "§a[在线]" else "§7[离线]"
+                sender.sendMessage("§6===== $onlineTag §e$playerName §6的余额 =====")
+                accounts.forEach { snap ->
+                    sender.sendMessage("§7- §e${snap.currencyDisplayName} §7(${snap.currencyIdentifier}): §f${snap.formattedBalance}")
+                }
+            }
+        }
+    }
+
+    /**
      * 处理管理员存款命令。
-     * 以 playerName 为主要标识，UUID 作为记录字段。
+     * 在线玩家走缓存路径（零延迟），离线玩家走 Direct 数据库路径（避免多服缓存冲突）。
      */
     private fun handleGive(sender: CommandSender, playerName: String, currencyId: String, amountStr: String, reason: String) {
         val amount = CurrencyPrecisionUtil.parseAmount(amountStr)
@@ -502,13 +569,19 @@ object MainCommand {
         val name = target.name ?: playerName
         val operatorName = if (sender is Player) sender.name else "CONSOLE"
         val reasonStr = reason.ifEmpty { "command:give" }
+        val isOnline = Bukkit.getPlayerExact(name) != null
 
         AsyncExecutor.runAsync {
-            val result = AccountService.deposit(name, uuid, currencyId, amount, reasonStr, operatorName)
+            val result = if (isOnline) {
+                AccountService.deposit(name, uuid, currencyId, amount, reasonStr, operatorName)
+            } else {
+                AccountService.depositDirect(name, uuid, currencyId, amount, reasonStr, operatorName)
+            }
             if (result.success) {
                 val currency = CurrencyService.getByIdentifier(currencyId)
                 val formatted = currency?.let { CurrencyPrecisionUtil.format(amount, it.precision) } ?: amount.toString()
-                sender.sendMessage("§a已向 §e$name §a的 §e$currencyId §a账户存入 §f$formatted§a。")
+                val mode = if (isOnline) "" else " §7(离线模式)"
+                sender.sendMessage("§a已向 §e$name §a的 §e$currencyId §a账户存入 §f$formatted§a。$mode")
             } else {
                 sender.sendMessage("§c操作失败: ${result.message}")
             }
@@ -517,6 +590,7 @@ object MainCommand {
 
     /**
      * 处理管理员扣款命令。
+     * 在线玩家走缓存路径，离线玩家走 Direct 数据库路径。
      */
     private fun handleTake(sender: CommandSender, playerName: String, currencyId: String, amountStr: String, reason: String) {
         val amount = CurrencyPrecisionUtil.parseAmount(amountStr)
@@ -529,13 +603,19 @@ object MainCommand {
         val name = target.name ?: playerName
         val operatorName = if (sender is Player) sender.name else "CONSOLE"
         val reasonStr = reason.ifEmpty { "command:take" }
+        val isOnline = Bukkit.getPlayerExact(name) != null
 
         AsyncExecutor.runAsync {
-            val result = AccountService.withdraw(name, uuid, currencyId, amount, reasonStr, operatorName)
+            val result = if (isOnline) {
+                AccountService.withdraw(name, uuid, currencyId, amount, reasonStr, operatorName)
+            } else {
+                AccountService.withdrawDirect(name, uuid, currencyId, amount, reasonStr, operatorName)
+            }
             if (result.success) {
                 val currency = CurrencyService.getByIdentifier(currencyId)
                 val formatted = currency?.let { CurrencyPrecisionUtil.format(amount, it.precision) } ?: amount.toString()
-                sender.sendMessage("§a已从 §e$name §a的 §e$currencyId §a账户扣除 §f$formatted§a。")
+                val mode = if (isOnline) "" else " §7(离线模式)"
+                sender.sendMessage("§a已从 §e$name §a的 §e$currencyId §a账户扣除 §f$formatted§a。$mode")
             } else {
                 sender.sendMessage("§c操作失败: ${result.message}")
             }
@@ -544,6 +624,7 @@ object MainCommand {
 
     /**
      * 处理管理员设置余额命令。
+     * 在线玩家走缓存路径，离线玩家走 Direct 数据库路径。
      */
     private fun handleSet(sender: CommandSender, playerName: String, currencyId: String, amountStr: String, reason: String) {
         val amount = CurrencyPrecisionUtil.parseAmount(amountStr)
@@ -556,13 +637,19 @@ object MainCommand {
         val name = target.name ?: playerName
         val operatorName = if (sender is Player) sender.name else "CONSOLE"
         val reasonStr = reason.ifEmpty { "command:set" }
+        val isOnline = Bukkit.getPlayerExact(name) != null
 
         AsyncExecutor.runAsync {
-            val result = AccountService.setBalance(name, uuid, currencyId, amount, reasonStr, operatorName)
+            val result = if (isOnline) {
+                AccountService.setBalance(name, uuid, currencyId, amount, reasonStr, operatorName)
+            } else {
+                AccountService.setBalanceDirect(name, uuid, currencyId, amount, reasonStr, operatorName)
+            }
             if (result.success) {
                 val currency = CurrencyService.getByIdentifier(currencyId)
                 val formatted = currency?.let { CurrencyPrecisionUtil.format(amount, it.precision) } ?: amount.toString()
-                sender.sendMessage("§a已将 §e$name §a的 §e$currencyId §a余额设为 §f$formatted§a。")
+                val mode = if (isOnline) "" else " §7(离线模式)"
+                sender.sendMessage("§a已将 §e$name §a的 §e$currencyId §a余额设为 §f$formatted§a。$mode")
             } else {
                 sender.sendMessage("§c操作失败: ${result.message}")
             }
