@@ -177,8 +177,13 @@ object CurrencyService {
 
         CurrencyRepository.insert(entity)
         refreshCache()
+        val created = getByIdentifier(id)
+        if (created == null) {
+            warning("[MCE] 货币 '$id' 创建后未能从缓存中读取。")
+            return null
+        }
         info("[MCE] 货币 '$id' ($name) 创建成功。")
-        return entity
+        return created
     }
 
     /**
