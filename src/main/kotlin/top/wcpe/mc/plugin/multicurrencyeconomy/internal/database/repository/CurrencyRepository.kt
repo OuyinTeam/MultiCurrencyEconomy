@@ -130,25 +130,33 @@ object CurrencyRepository {
      * @return 影响行数
      */
     fun softDelete(id: Int): Long {
-        val entity = findById(id) ?: return 0
-        entity.deleted = true
-        entity.updatedAt = LocalDateTime.now()
-        return eq.updatable(entity).executeRows()
+        val now = LocalDateTime.now()
+        return eq.updatable(CurrencyEntity::class.java)
+            .setColumns {
+                it.deleted().set(true)
+                it.updatedAt().set(now)
+            }
+            .where {
+                it.id().eq(id)
+                it.deleted().eq(false)
+            }
+            .executeRows()
     }
 
     /**
      * 清除所有货币的主货币标记（用于切换主货币前的重置操作）。
      */
     fun clearAllPrimary() {
-        val primaries = eq.queryable(CurrencyEntity::class.java)
-            .where { it.deleted().eq(false); it.primary().eq(true) }
-            .toList()
-        primaries.forEach {
-            it.primary = false
-            it.updatedAt = LocalDateTime.now()
-        }
-        if (primaries.isNotEmpty()) {
-            eq.updatable(primaries).executeRows()
-        }
+        val now = LocalDateTime.now()
+        eq.updatable(CurrencyEntity::class.java)
+            .setColumns {
+                it.primary().set(false)
+                it.updatedAt().set(now)
+            }
+            .where {
+                it.deleted().eq(false)
+                it.primary().eq(true)
+            }
+            .executeRows()
     }
 }

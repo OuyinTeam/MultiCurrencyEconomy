@@ -48,7 +48,10 @@ object BackupRepository {
      */
     fun findBySnapshotIdAndPlayer(snapshotId: String, playerName: String): List<BackupSnapshotEntity> {
         return eq.queryable(BackupSnapshotEntity::class.java)
-            .where { it.snapshotId().eq(snapshotId); it.playerName().eq(playerName) }
+            .where {
+                it.snapshotId().eq(snapshotId)
+                it.playerName().eq(playerName)
+            }
             .toList()
     }
 
@@ -62,11 +65,24 @@ object BackupRepository {
      * @return 去重后的快照列表（每批次一条）
      */
     fun findDistinctSnapshots(): List<BackupSnapshotEntity> {
-        val allSnapshots = eq.queryable(BackupSnapshotEntity::class.java)
-            .orderBy { it.createdAt().desc() }
+        val snapshotIds = eq.queryable(BackupSnapshotEntity::class.java)
+            .selectColumn { it.snapshotId() }
+            .distinct()
             .toList()
-        // 按 snapshotId 去重，保留每个批次的第一条记录
-        return allSnapshots.distinctBy { it.snapshotId }
+        if (snapshotIds.isEmpty()) return emptyList()
+
+        return snapshotIds.asSequence()
+            .mapNotNull { snapshotId ->
+                eq.queryable(BackupSnapshotEntity::class.java)
+                    .where { it.snapshotId().eq(snapshotId) }
+                    .orderBy {
+                        it.createdAt().desc()
+                        it.id().desc()
+                    }
+                    .firstOrNull()
+            }
+            .sortedByDescending { it.createdAt }
+            .toList()
     }
 
     /**
@@ -75,7 +91,10 @@ object BackupRepository {
      * @return 批次总数
      */
     fun countDistinctSnapshots(): Int {
-        return findDistinctSnapshots().size
+        return eq.queryable(BackupSnapshotEntity::class.java)
+            .selectCount({ it.snapshotId() }, true)
+            .firstOrNull()
+            ?.toInt() ?: 0
     }
 
     /**
@@ -85,8 +104,8 @@ object BackupRepository {
      * @return 删除的行数
      */
     fun deleteBySnapshotId(snapshotId: String): Long {
-        val entities = findBySnapshotId(snapshotId)
-        if (entities.isEmpty()) return 0
-        return eq.deletable(entities).executeRows()
+        return eq.deletable(BackupSnapshotEntity::class.java)
+            .where { it.snapshotId().eq(snapshotId) }
+            .executeRows()
     }
 }

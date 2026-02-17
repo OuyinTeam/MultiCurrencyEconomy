@@ -2,6 +2,7 @@ package top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.repository
 
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.DatabaseManager
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.database.entity.AccountEntity
+import com.easy.query.core.proxy.sql.Select
 import java.math.BigDecimal
 import java.time.LocalDateTime
 
@@ -86,7 +87,9 @@ object AccountRepository {
             if (existing.playerUuid != playerUuid && playerUuid.isNotEmpty()) {
                 existing.playerUuid = playerUuid
                 existing.updatedAt = LocalDateTime.now()
-                eq.updatable(existing).executeRows()
+                eq.updatable(existing)
+                    .setColumns { Select.of(it.playerUuid(), it.updatedAt()) }
+                    .executeRows()
             }
             return existing
         }
@@ -115,7 +118,9 @@ object AccountRepository {
      */
     fun update(entity: AccountEntity): Long {
         entity.updatedAt = LocalDateTime.now()
-        return eq.updatable(entity).executeRows()
+        return eq.updatable(entity)
+            .setColumns { Select.of(it.playerUuid(), it.balance(), it.maxBalance(), it.updatedAt()) }
+            .executeRows()
     }
 
     /**
@@ -133,7 +138,9 @@ object AccountRepository {
         // 获取数据库中的最新版本号，确保乐观锁校验通过
         val current = findByPlayerAndCurrency(entity.playerName, entity.currencyId) ?: return 0
         entity.version = current.version
-        return eq.updatable(entity).executeRows()
+        return eq.updatable(entity)
+            .setColumns { Select.of(it.playerUuid(), it.balance(), it.maxBalance(), it.updatedAt()) }
+            .executeRows()
     }
 
     /**
@@ -159,6 +166,8 @@ object AccountRepository {
         val account = findByPlayerAndCurrency(playerName, currencyId) ?: return false
         account.maxBalance = maxBalance
         account.updatedAt = LocalDateTime.now()
-        return eq.updatable(account).executeRows() > 0
+        return eq.updatable(account)
+            .setColumns { Select.of(it.maxBalance(), it.updatedAt()) }
+            .executeRows() > 0
     }
 }
