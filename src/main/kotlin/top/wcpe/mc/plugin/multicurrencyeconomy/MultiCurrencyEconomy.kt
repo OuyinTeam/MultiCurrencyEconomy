@@ -27,7 +27,7 @@ import java.math.BigDecimal
  *
  * 【启动流程】（onEnable）
  *   1. 重置异步执行器状态
- *   2. 在异步线程中初始化数据库（CoreLib 数据源 → Code First 建表 → 就绪门控）
+ *   2. 主线程同步初始化数据库（CoreLib 数据源 → Code First 建表 → 就绪门控）
  *   3. 初始化货币服务（刷新缓存 + 创建默认主货币）
  *   4. 初始化账户服务（加载在线玩家余额缓存）
  *   5. 注入 API 委托（MultiCurrencyEconomyApi.delegate）
@@ -44,7 +44,8 @@ import java.math.BigDecimal
  *   - 软依赖：Vault（经济系统桥接）、PlaceholderAPI（占位符）
  *
  * 【线程安全】
- *   onEnable/onDisable 在主线程调用，数据库初始化在异步线程执行。
+ *   onEnable/onDisable 在主线程调用，所有初始化均在主线程同步执行。
+ *   API 在插件 onEnable 完成后立即可用，其他插件可直接同步调用。
  */
 object MultiCurrencyEconomy : Plugin() {
 
@@ -59,32 +60,28 @@ object MultiCurrencyEconomy : Plugin() {
         // 重置异步执行器
         AsyncExecutor.reset()
 
-        // 异步初始化数据库及服务
-        submitAsync {
-            try {
-                // 1. 数据库初始化（Code First 建表）
-                DatabaseManager.initialize()
+        try {
+            // 1. 数据库初始化（Code First 建表）
+            DatabaseManager.initialize()
 
-                // 2. 货币服务初始化（缓存 + 默认货币）
-                CurrencyService.initialize()
+            // 2. 货币服务初始化（缓存 + 默认货币）
+            CurrencyService.initialize()
 
-                // 3. 账户服务初始化（加载在线玩家缓存）
-                AccountService.initialize()
+            // 3. 账户服务初始化（加载在线玩家缓存）
+            AccountService.initialize()
 
-                // 4. 注入 API 委托
-                injectApiDelegate()
-                info("[MCE] API 委托注入完成。")
+            // 4. 注入 API 委托
+            injectApiDelegate()
+            info("[MCE] API 委托注入完成。")
 
-                // 5. 注册 Vault（在主线程执行，因为 Bukkit ServiceManager 非线程安全）
-                AsyncExecutor.runSync {
-                    registerVault()
-                    registerPlaceholderApi()
-                    info("[MCE] MultiCurrencyEconomy 启动完成！")
-                }
-            } catch (e: Exception) {
-                severe("[MCE] 插件初始化失败: ${e.message}")
-                e.printStackTrace()
-            }
+            // 5. 注册 Vault 和 PlaceholderAPI
+            registerVault()
+            registerPlaceholderApi()
+            
+            info("[MCE] MultiCurrencyEconomy 启动完成！")
+        } catch (e: Exception) {
+            severe("[MCE] 插件初始化失败: ${e.message}")
+            e.printStackTrace()
         }
     }
 

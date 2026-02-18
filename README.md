@@ -114,4 +114,38 @@ Vault 标准接口是单货币模型。本插件会把“主货币”映射给 V
 
 ## 文档索引
 
-- API 使用文档：`docs/API_USAGE_CN.md`
+### 开发者文档
+- **API 快速开始**：[docs/QUICK_START_CN.md](docs/QUICK_START_CN.md) - 5 分钟快速接入指南
+- **完整 API 文档**：[docs/API_USAGE_CN.md](docs/API_USAGE_CN.md) - 详细 API 说明与故障排查
+
+### 其他项目集成示例
+
+如果您正在开发插件并想集成 MultiCurrencyEconomy，请参考：
+
+1. **添加依赖** →
+```kotlin
+// build.gradle.kts
+repositories {
+    maven("https://maven.wcpe.top/repository/maven-public/")
+}
+dependencies {
+    compileOnly("top.wcpe.mc.plugin:multicurrencyeconomy-api:1.0.0-SNAPSHOT")
+}
+```
+
+2. **初始化集成（主线程同步调用）** →
+```kotlin
+// MCE 在主线程同步初始化，可以直接调用
+override fun onEnable() {
+    if (MultiCurrencyEconomyApi.isReady()) {
+        val operator = MultiCurrencyEconomyApi.delegate("YourPlugin")
+        logger.info("✓ MCE 集成成功")
+    } else {
+        logger.warning("✗ 请检查 plugin.yml 是否配置 depend: [MultiCurrencyEconomy]")
+    }
+}
+```
+
+3. **查看完整示例** → [docs/QUICK_START_CN.md](docs/QUICK_START_CN.md)
+
+---
