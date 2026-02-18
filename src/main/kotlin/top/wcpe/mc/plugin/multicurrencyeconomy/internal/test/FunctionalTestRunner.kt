@@ -1,7 +1,9 @@
 package top.wcpe.mc.plugin.multicurrencyeconomy.internal.test
 
+import top.wcpe.mc.plugin.multicurrencyeconomy.api.model.ChangeType
 import top.wcpe.mc.plugin.multicurrencyeconomy.api.model.EconomyResult
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.service.AccountService
+import top.wcpe.mc.plugin.multicurrencyeconomy.internal.service.AuditService
 import top.wcpe.mc.plugin.multicurrencyeconomy.internal.service.CurrencyService
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
@@ -511,6 +513,221 @@ object FunctionalTestRunner {
     }
 
     /**
+     * 流水记录一致性测试集：
+     * - 验证每次余额变化都有对应流水记录
+     * - 验证流水中的 balanceBefore/balanceAfter 正确
+     * - 验证 DEPOSIT/WITHDRAW/SET 操作的流水记录完整性
+     */
+    fun runTransactionLogSuite(): FunctionalTestSuiteResult {
+        val suite = "流水记录一致性"
+        val start = System.currentTimeMillis()
+        val results = mutableListOf<FunctionalTestCaseResult>()
+
+        val token = uniqueToken()
+        val currencyId = "eco_t_log_$token"
+        val playerName = "logger_player_$token"
+        val playerUuid = uuidFromName(playerName)
+
+        try {
+            results += runCase(suite, "准备测试货币") {
+                val created = CurrencyService.createCurrency(
+                    identifier = currencyId,
+                    name = "流水测试币",
+                    precision = 2,
+                    symbol = "§e$",
+                    defaultMaxBalance = -1L,
+                    consoleLog = false
+                ) ?: return@runCase fail("创建测试货币失败")
+                pass("测试货币准备完成")
+            }
+
+            results += runCase(suite, "DEPOSIT 操作流水记录验证") {
+                // 获取操作前流水数量
+                val beforeCount = AuditService.countLogsByPlayerAndCurrency(playerName, currencyId)
+                
+                // 执行存款操作
+                val depositResult = AccountService.depositDirect(
+                    playerName, playerUuid, currencyId, BigDecimal("100.50"),
+                    "$DEFAULT_REASON_PREFIX:deposit-log-test", DEFAULT_OPERATOR
+                )
+                if (!depositResult.success) {
+                    return@runCase fail("存款操作失败：${depositResult.message}")
+                }
+                
+                // 等待异步写入
+                Thread.sleep(100)
+                
+                // 验证流水记录数量增加
+                val afterCount = AuditService.countLogsByPlayerAndCurrency(playerName, currencyId)
+                if (afterCount != beforeCount + 1) {
+                    return@runCase fail("流水记录数量不匹配：期望${beforeCount + 1}，实际$afterCount")
+                }
+                
+                // 查询最新流水记录
+                val logs = AuditService.queryLogsByPlayerAndCurrency(playerName, currencyId, 1, 1)
+                if (logs.isEmpty()) {
+                    return@runCase fail("无法查询到流水记录")
+                }
+                
+                val log = logs[0]
+                if (log.type != ChangeType.DEPOSIT) {
+                    return@runCase fail("流水类型错误：期望DEPOSIT，实际${log.type}")
+                }
+                if (log.balanceBefore.compareTo(BigDecimal.ZERO) != 0) {
+                    return@runCase fail("变动前余额错误：期望0.00，实际${log.balanceBefore}")
+                }
+                if (log.balanceAfter.compareTo(BigDecimal("100.50")) != 0) {
+                    return@runCase fail("变动后余额错误：期望100.50，实际${log.balanceAfter}")
+                }
+                if (log.amount.compareTo(BigDecimal("100.50")) != 0) {
+                    return@runCase fail("变动金额错误：期望100.50，实际${log.amount}")
+                }
+                
+                pass("DEPOSIT 流水记录完整且正确")
+            }
+
+            results += runCase(suite, "WITHDRAW 操作流水记录验证") {
+                val beforeCount = AuditService.countLogsByPlayerAndCurrency(playerName, currencyId)
+                val currentBalance = AccountService.getBalanceFromDb(playerName, currencyId)
+                
+                // 执行取款操作
+                val withdrawResult = AccountService.withdrawDirect(
+                    playerName, playerUuid, currencyId, BigDecimal("30.25"),
+                    "$DEFAULT_REASON_PREFIX:withdraw-log-test", DEFAULT_OPERATOR
+                )
+                if (!withdrawResult.success) {
+                    return@runCase fail("取款操作失败：${withdrawResult.message}")
+                }
+                
+                Thread.sleep(100)
+                
+                val afterCount = AuditService.countLogsByPlayerAndCurrency(playerName, currencyId)
+                if (afterCount != beforeCount + 1) {
+                    return@runCase fail("流水记录数量不匹配：期望${beforeCount + 1}，实际$afterCount")
+                }
+                
+                val logs = AuditService.queryLogsByPlayerAndCurrency(playerName, currencyId, 1, 1)
+                if (logs.isEmpty()) {
+                    return@runCase fail("无法查询到流水记录")
+                }
+                
+                val log = logs[0]
+                if (log.type != ChangeType.WITHDRAW) {
+                    return@runCase fail("流水类型错误：期望WITHDRAW，实际${log.type}")
+                }
+                if (log.balanceBefore.compareTo(currentBalance) != 0) {
+                    return@runCase fail("变动前余额错误：期望$currentBalance，实际${log.balanceBefore}")
+                }
+                val expectedAfter = currentBalance.subtract(BigDecimal("30.25"))
+                if (log.balanceAfter.compareTo(expectedAfter) != 0) {
+                    return@runCase fail("变动后余额错误：期望$expectedAfter，实际${log.balanceAfter}")
+                }
+                if (log.amount.compareTo(BigDecimal("30.25")) != 0) {
+                    return@runCase fail("变动金额错误：期望30.25，实际${log.amount}")
+                }
+                
+                pass("WITHDRAW 流水记录完整且正确")
+            }
+
+            results += runCase(suite, "SET 操作流水记录验证") {
+                val beforeCount = AuditService.countLogsByPlayerAndCurrency(playerName, currencyId)
+                val currentBalance = AccountService.getBalanceFromDb(playerName, currencyId)
+                
+                // 执行设置余额操作
+                val setResult = AccountService.setBalanceDirect(
+                    playerName, playerUuid, currencyId, BigDecimal("200.00"),
+                    "$DEFAULT_REASON_PREFIX:set-log-test", DEFAULT_OPERATOR
+                )
+                if (!setResult.success) {
+                    return@runCase fail("设置余额操作失败：${setResult.message}")
+                }
+                
+                Thread.sleep(100)
+                
+                val afterCount = AuditService.countLogsByPlayerAndCurrency(playerName, currencyId)
+                if (afterCount != beforeCount + 1) {
+                    return@runCase fail("流水记录数量不匹配：期望${beforeCount + 1}，实际$afterCount")
+                }
+                
+                val logs = AuditService.queryLogsByPlayerAndCurrency(playerName, currencyId, 1, 1)
+                if (logs.isEmpty()) {
+                    return@runCase fail("无法查询到流水记录")
+                }
+                
+                val log = logs[0]
+                if (log.type != ChangeType.SET) {
+                    return@runCase fail("流水类型错误：期望SET，实际${log.type}")
+                }
+                if (log.balanceBefore.compareTo(currentBalance) != 0) {
+                    return@runCase fail("变动前余额错误：期望$currentBalance，实际${log.balanceBefore}")
+                }
+                if (log.balanceAfter.compareTo(BigDecimal("200.00")) != 0) {
+                    return@runCase fail("变动后余额错误：期望200.00，实际${log.balanceAfter}")
+                }
+                val expectedDelta = BigDecimal("200.00").subtract(currentBalance).abs()
+                if (log.amount.compareTo(expectedDelta) != 0) {
+                    return@runCase fail("变动金额错误：期望$expectedDelta，实际${log.amount}")
+                }
+                
+                pass("SET 流水记录完整且正确（含变动前后余额）")
+            }
+
+            results += runCase(suite, "多次操作流水记录累积验证") {
+                val initialCount = AuditService.countLogsByPlayerAndCurrency(playerName, currencyId)
+                
+                // 执行多次操作
+                AccountService.depositDirect(
+                    playerName, playerUuid, currencyId, BigDecimal("10"),
+                    "$DEFAULT_REASON_PREFIX:multi-1", DEFAULT_OPERATOR
+                )
+                AccountService.withdrawDirect(
+                    playerName, playerUuid, currencyId, BigDecimal("5"),
+                    "$DEFAULT_REASON_PREFIX:multi-2", DEFAULT_OPERATOR
+                )
+                AccountService.setBalanceDirect(
+                    playerName, playerUuid, currencyId, BigDecimal("100"),
+                    "$DEFAULT_REASON_PREFIX:multi-3", DEFAULT_OPERATOR
+                )
+                
+                Thread.sleep(200)
+                
+                val finalCount = AuditService.countLogsByPlayerAndCurrency(playerName, currencyId)
+                if (finalCount != initialCount + 3) {
+                    return@runCase fail("流水记录数量不匹配：期望${initialCount + 3}，实际$finalCount")
+                }
+                
+                // 验证流水记录的连续性
+                val logs = AuditService.queryLogsByPlayerAndCurrency(playerName, currencyId, 1, 3)
+                if (logs.size != 3) {
+                    return@runCase fail("无法查询到3条流水记录，实际${logs.size}条")
+                }
+                
+                // 验证每条流水的 balanceAfter 与下一条的 balanceBefore 连续
+                for (i in 0 until logs.size - 1) {
+                    val currentAfter = logs[i].balanceAfter
+                    val nextBefore = logs[i + 1].balanceBefore
+                    if (currentAfter.compareTo(nextBefore) != 0) {
+                        return@runCase fail(
+                            "流水记录不连续：第${i}条的after=$currentAfter，第${i + 1}条的before=$nextBefore"
+                        )
+                    }
+                }
+                
+                pass("多次操作流水记录完整且连续")
+            }
+
+            return FunctionalTestSuiteResult(
+                suiteName = suite,
+                caseResults = results,
+                startedAtEpochMs = start,
+                finishedAtEpochMs = System.currentTimeMillis()
+            )
+        } finally {
+            cleanupCurrencies(currencyId)
+        }
+    }
+
+    /**
      * 执行全部测试集。
      */
     fun runAllSuites(threads: Int = 16, operations: Int = 400): List<FunctionalTestSuiteResult> {
@@ -518,7 +735,8 @@ object FunctionalTestRunner {
             runCurrencyCrudSuite(),
             runAccountIsolationSuite(),
             runConcurrencySuite(threads, operations),
-            runStabilitySuite(threads, operations)
+            runStabilitySuite(threads, operations),
+            runTransactionLogSuite()
         )
     }
 

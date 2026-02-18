@@ -117,6 +117,23 @@ object EcoTestStabilityCommand {
 }
 
 @CommandHeader(
+    name = "eco-test-log",
+    permission = "mce.admin.test.log",
+    description = "执行流水记录一致性测试"
+)
+object EcoTestLogCommand {
+
+    @CommandBody
+    val main = mainCommand {
+        execute<CommandSender> { sender, _, _ ->
+            FunctionalTestCommandSupport.runSuite(sender, "流水记录一致性") {
+                FunctionalTestRunner.runTransactionLogSuite()
+            }
+        }
+    }
+}
+
+@CommandHeader(
     name = "eco-test-all",
     permission = "mce.admin.test.all",
     description = "执行全部功能测试"
